@@ -1,0 +1,16 @@
+langgraph
+jinja2
+langchain-openai
+langchain-core
+python-dotenv
+pydantic
+mcp
+streamlit
+nest_asyncio
+
+# 测试依赖
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+responses>=0.23.0

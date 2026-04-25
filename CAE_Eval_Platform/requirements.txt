@@ -1,0 +1,7 @@
+ragas
+datasets
+streamlit
+pandas
+langchain-openai
+langchain-community
+python-dotenv

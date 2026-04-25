@@ -1,0 +1,26 @@
+{
+  "V级围岩": {
+    "elastic_modulus": 1500,
+    "poisson_ratio": 0.35,
+    "density": 2.2e-9,
+    "cohesion": 0.15,
+    "friction_angle": 25
+  },
+  "IV级围岩": {
+    "elastic_modulus": 3000,
+    "poisson_ratio": 0.3,
+    "density": 2.3e-9,
+    "cohesion": 0.5,
+    "friction_angle": 32
+  },
+  "C30喷射混凝土": {
+    "elastic_modulus": 30000,
+    "poisson_ratio": 0.2,
+    "density": 2.4e-9
+  },
+  "HPB300钢": {
+    "elastic_modulus": 210000,
+    "poisson_ratio": 0.3,
+    "density": 7.85e-9
+  }
+}

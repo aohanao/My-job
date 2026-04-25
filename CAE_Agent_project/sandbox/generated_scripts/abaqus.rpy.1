@@ -1,0 +1,32 @@
+# -*- coding: mbcs -*-
+#
+# Abaqus/CAE Release 2024 replay file
+# Internal Version: 2023_09_21-20.55.25 RELr426 190762
+# Run by wwwk on Sat Apr 18 16:22:54 2026
+#
+
+# from driverUtils import executeOnCaeGraphicsStartup
+# executeOnCaeGraphicsStartup()
+#: Executing "onCaeGraphicsStartup()" in the site directory ...
+from abaqus import *
+from abaqusConstants import *
+session.Viewport(name='Viewport: 1', origin=(1.16602, 1.16667), width=171.637, 
+    height=115.733)
+session.viewports['Viewport: 1'].makeCurrent()
+from driverUtils import executeOnCaeStartup
+executeOnCaeStartup()
+execfile('run_bullet_impact_20260418_162251.py', __main__.__dict__)
+#: 模型数据库已保存到 "G:\Abaqus\agent_project\bullet.cae".
+#: 相互作用属性 "IntProp-1" 已创建.
+#: 相互作用 "Int-1" 已创建.
+#: 模型: G:/Abaqus/agent_project/Job-1.odb
+#: 装配件个数:         1
+#: 装配件实例个数: 0
+#: 部件实例的个数:     2
+#: 网格数:             3
+#: 单元集合数:       3
+#: 结点集合数:          4
+#: 分析步的个数:              1
+#: 模型数据库已保存到 "G:\Abaqus\agent_project\bullet.cae".
+print('RT script done')
+#: RT script done
