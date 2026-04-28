@@ -1,0 +1,7 @@
+networkx
+openai
+pydantic
+python-dotenv
+pyvis
+python-louvain
+pandas
