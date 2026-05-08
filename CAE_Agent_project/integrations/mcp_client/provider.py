@@ -1,6 +1,6 @@
 import os
 from langchain_core.tools import tool
-from integrations.mcp_client.server import lookup_cae_knowledge
+from integrations.mcp_client.server import lookup_local_material_db
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -10,7 +10,7 @@ class ToolProvider:
 
 class LocalToolProvider(ToolProvider):
     def get_material_tool(self):
-        return lookup_cae_knowledge
+        return lookup_local_material_db
 
 MCP_SERVER_SCRIPT = os.path.join(os.path.dirname(__file__), "server_entry.py")
 

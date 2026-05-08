@@ -157,9 +157,9 @@ async def run_agent_step(user_input: str, session_id: str):
 
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
                             for tc in msg.tool_calls:
-                                if tc["name"] == "lookup_cae_knowledge":
+                                if tc["name"] in ("lookup_cae_knowledge", "lookup_local_material_db"):
                                     active_spans["rag"] = {
-                                        "name": "lookup_cae_knowledge",
+                                        "name": tc["name"],
                                         "input": tc["args"],
                                         "start": time.time()
                                     }

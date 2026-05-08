@@ -5,7 +5,6 @@ from langgraph.graph import StateGraph, END
 from functools import partial
 from core.state_graph.state import SimPipelineState
 from core.state_graph.nodes.extractor_node import extractor_node
-from core.state_graph.nodes.review_node import review_node
 from core.state_graph.nodes.coder_node import coder_node
 from core.state_graph.nodes.executor_node import executor_node
 from core.state_graph.routing import route_after_extractor, route_after_coder

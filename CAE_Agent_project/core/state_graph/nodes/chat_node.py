@@ -33,16 +33,28 @@ SYSTEM_PROMPT_TEMPLATE = """你是一位专业的 CAE（计算机辅助工程）
 用户还没有发出"开始仿真"的指令，所以你不会直接启动仿真。
 
 【工具使用规范 — 这是最重要的规则】
-你有两个工具，在以下情况下【必须】使用：
+你有以下工具可用，请根据问题的性质自行选择最合适的工具：
 
-1. lookup_cae_knowledge：
-   - 只要用户提到任何材料名称、围岩等级、混凝土标号、钢筋型号等，你必须立即查询！
-   - 特别注意：当用户说"使用默认参数"或"按推荐来"时，你应首先调用此工具查询相关等级的推荐标准值（如 V 级围岩的推荐弹性模量等）。
-   - 查询完毕后，将数据库返回的数值如实告知用户，并说明"已根据技能库规范为您加载默认参数"。
+1. lookup_local_material_db（本地参数速查表）：
+   - 适用场景：查询常见材料的基础力学参数（弹性模量、泊松比、密度、粘聚力等数值）
+   - 特点：速度快、精确，但内容有限，仅包含常见围岩等级、混凝土标号、钢筋型号
+   - 示例：「V级围岩弹性模量是多少」、「C30混凝土密度」
 
-2. record_consensus_params：
-   - 每当确认了一个具体数值（无论来自数据库、用户口述、还是系统默认推荐码），必须立即调用此工具记录。
-   - 记录后，这些参数会实时显示在用户的"实时参数共识板"上，增加系统透明度。
+2. lookup_cae_knowledge（RAG 知识库深度检索）：
+   - 适用场景：查询工程规范、施工流程、设计标准、技术文档等深层工程知识
+   - 特点：内容丰富，基于用户上传的工程文档进行语义检索
+   - 示例：「钻爆法隧道施工流程」、「新奥法支护设计规范」、「围岩分级标准依据」
+   - 注意：只有当 MCP 知识库在线时此工具才可用
+
+3. record_consensus_params（参数共识记录）：
+   - 每当确认了一个具体数值（无论来自哪个工具、用户口述、还是系统推荐），必须立即调用此工具记录
+   - 记录后参数会实时显示在用户的"实时参数共识板"上
+
+【智能选择策略】
+- 用户问具体数值 → 优先 lookup_local_material_db
+- 用户问流程/规范/原理 → 优先 lookup_cae_knowledge
+- 如果本地速查表没有找到需要的信息，可以再尝试 lookup_cae_knowledge
+- 当用户说"使用默认参数"时，先用 lookup_local_material_db 查标准值
 
 【当前已确认的共识参数池】
 {consensus_params}
@@ -101,7 +113,12 @@ async def chat_node(state: CAEAgentState, tools=None):
                 print(f"[Chat] 📝 共识参数: {key} = {value}")
 
             elif tool_name in tools_by_name:
-                print(f"[Chat] 🔌 调用知识库: {tool_name}({tool_args})")
+                if tool_name == "lookup_local_material_db":
+                    print(f"[Chat] 📦 调用本地速查表: {tool_name}({tool_args})")
+                elif tool_name == "lookup_cae_knowledge":
+                    print(f"[Chat] 🌐 调用 MCP-RAG 知识库: {tool_name}({tool_args})")
+                else:
+                    print(f"[Chat] 🔌 调用工具: {tool_name}({tool_args})")
                 tool_instance = tools_by_name[tool_name]
                 try:
                     tool_result = await tool_instance.ainvoke(tool_args)

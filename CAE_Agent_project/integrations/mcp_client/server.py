@@ -5,11 +5,12 @@ from langchain_core.tools import tool
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @tool
-def lookup_cae_knowledge(query: str) -> str:
+def lookup_local_material_db(query: str) -> str:
     """
-    查询 CAE 工程规范与材料参数数据库。
-    当需要围岩等级、材料弹性模量、泊松比、密度、粘聚力、摩擦角等任何材料或
-    工程参数时，必须调用此工具。直接传入自然语言描述即可，无需精确名称。
+    快速查询本地材料参数速查表（小型 JSON 数据库）。
+    仅包含常见围岩等级、混凝土标号、钢筋型号的基础力学参数（弹性模量、泊松比、密度等）。
+    适合简单的参数数值速查。如果需要查询工程规范、施工流程、设计标准等深层知识，
+    请使用 lookup_cae_knowledge 工具。
     示例输入: "V级围岩的参数", "C30混凝土弹性模量", "HPB300钢密度"
     """
     db_path = os.path.join(_CURRENT_DIR, "material_db.json")

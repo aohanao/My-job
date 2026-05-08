@@ -2,6 +2,8 @@ ragas
 datasets
 streamlit
 pandas
+plotly
+httpx
 langchain-openai
 langchain-community
 python-dotenv
