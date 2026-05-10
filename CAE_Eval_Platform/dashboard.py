@@ -435,22 +435,29 @@ if selected_trace_id:
                 </div>
             """, unsafe_allow_html=True)
             
+            def safe_render_json(container, data_str):
+                if data_str is None:
+                    container.code("None", language='json')
+                    return
+                try:
+                    parsed = json.loads(data_str)
+                    if isinstance(parsed, (dict, list)):
+                        container.json(parsed)
+                    else:
+                        container.code(str(parsed), language='json')
+                except Exception:
+                    container.code(str(data_str), language='json')
+
             col_in, col_out = st.columns(2)
             with col_in:
                 st.write("📥 **输入载荷 (Input Payload):**")
                 container = st.container(border=True)
-                try:
-                    container.json(json.loads(selected_span['input_data']))
-                except:
-                    container.code(selected_span['input_data'], language='json')
+                safe_render_json(container, selected_span['input_data'])
             
             with col_out:
                 st.write("📤 **输出载荷 (Output Payload):**")
                 container = st.container(border=True)
-                try:
-                    container.json(json.loads(selected_span['output_data']))
-                except:
-                    container.code(selected_span['output_data'], language='json')
+                safe_render_json(container, selected_span['output_data'])
     else:
         st.warning("该 Trace 未记录任何被执行的子节点 Span。")
 

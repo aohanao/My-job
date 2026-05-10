@@ -7,11 +7,15 @@ import sqlite3
 import nest_asyncio
 import time
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-# 🚀 极其重要：由于 path_utils 就在 core 包内，
-# 所以在入口文件中必须先【手动】挂载路径，才能让后续的 from core... 正常工作。
+
+# 🚀 极其重要：挂载路径，确保能找到 core 包
 _ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT_DIR not in sys.path:
     sys.path.append(_ROOT_DIR)
+
+# 🚀 [核心修复 3]: 解决 Windows 下 Ctrl+C 卡死及异步兼容性
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 nest_asyncio.apply()
 
@@ -34,21 +38,26 @@ local_css(style_path)
 
 async def init_mcp_and_graph(session_id: str):
     """初始化 MCP 连接并构建 LangGraph"""
+    if "agent_memory" not in st.session_state:
+        st.session_state.agent_memory = MemorySaver()
+
     if "mcp_manager" not in st.session_state:
         st.session_state.mcp_manager = RAGConnectionManager()
+        manager = st.session_state.mcp_manager
         try:
-            # 默认连接本地 RAG 服务
-            await st.session_state.mcp_manager.connect("http://127.0.0.1:8000/sse")
-            st.session_state.rag_tools = await st.session_state.mcp_manager.get_all_rag_tools()
+            await manager.connect("http://127.0.0.1:8000/sse")
+            st.session_state.rag_tools = await manager.get_all_rag_tools()
             st.session_state.mcp_connected = True
         except Exception as e:
             st.session_state.mcp_connected = False
             st.session_state.mcp_error = str(e)
             st.session_state.rag_tools = []
-    
+            
     if "agent_app" not in st.session_state:
-        memory = MemorySaver()
-        st.session_state.agent_app = build_cae_graph(checkpointer=memory, tools=st.session_state.rag_tools)
+        st.session_state.agent_app = build_cae_graph(
+            checkpointer=st.session_state.agent_memory, 
+            tools=st.session_state.rag_tools
+        )
 
 # 强制基于 SSOT (Single Source of Truth) 更新所有状态
 def sync_state_from_graph(session_id: str):
@@ -112,7 +121,15 @@ async def run_agent_step(user_input: str, session_id: str):
             elif isinstance(msg, AIMessage):
                 if msg.content:
                     with st.chat_message("assistant"):
-                        st.write(msg.content)
+                        # 模拟打字机流式效果
+                        def stream_generator():
+                            # 按字符稍微停顿，模拟真实的流式输出感
+                            chunk_size = 3
+                            for i in range(0, len(msg.content), chunk_size):
+                                yield msg.content[i:i+chunk_size]
+                                time.sleep(0.01)
+                        st.write_stream(stream_generator())
+                        
                         if "✅ 物理机 CAE 计算已完美收官！" in msg.content and st.session_state.get("last_script_path"):
                             log_path = st.session_state.last_script_path.replace(".py", ".log")
                             if os.path.exists(log_path):
@@ -225,13 +242,18 @@ if "temp_thread_id" not in st.session_state:
     st.session_state.temp_thread_id = "default-session"
 
 def get_or_create_event_loop():
-    """安全获取或创建事件循环，解决 Streamlit 重载冲突"""
+    """安全获取或创建事件循环，并在 session_state 中持久化，防止线程漂移"""
+    if "shared_loop" in st.session_state and not st.session_state.shared_loop.is_closed():
+        return st.session_state.shared_loop
+        
     try:
-        return asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        return loop
+    
+    st.session_state.shared_loop = loop
+    return loop
 
 # 初始连接
 loop = get_or_create_event_loop()
