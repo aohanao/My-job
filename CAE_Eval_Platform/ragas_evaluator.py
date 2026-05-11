@@ -3,6 +3,8 @@ import json
 import uuid
 import time
 import os
+import numpy as np
+import pandas as pd
 import eval_config
 from datasets import Dataset
 from db_models import init_db
@@ -25,7 +27,7 @@ def build_judge_llm():
     if not api_key:
         raise ValueError("请在环境变量中设置 DASHSCOPE_API_KEY")
         
-    judge_model = ChatTongyi(model=eval_config.EVAL_JUDGE_MODEL)
+    judge_model = ChatTongyi(model=eval_config.EVAL_JUDGE_MODEL, max_retries=5)
     judge_embeddings = DashScopeEmbeddings(model=eval_config.EVAL_EMBEDDING_MODEL)
     return judge_model, judge_embeddings
 
@@ -49,18 +51,36 @@ def fetch_unevaluated_rag_samples():
             continue
             
         try:
-            question_dict = json.loads(input_data)
-            question = question_dict.get("query", "") if isinstance(question_dict, dict) else str(question_dict)
-            
-            contexts_raw = json.loads(output_data) if output_data else ""
-            contexts = [str(contexts_raw)] if contexts_raw else [""]
-            
-            cursor.execute("SELECT final_response FROM run_trace WHERE trace_id = ?", (trace_id,))
+            # 从 run_trace 中获取原始的用户提问和最终回答
+            cursor.execute("SELECT user_query, final_response FROM run_trace WHERE trace_id = ?", (trace_id,))
             trace_res = cursor.fetchone()
-            answer = trace_res[0] if trace_res and trace_res[0] else "未生成回答"
+            
+            # 【修复点1】问题应该取用户原始提问，而不是 Tool 的输入（Tool输入通常是关键词，会导致相关性评分极低）
+            user_query = trace_res[0] if trace_res and trace_res[0] else "未知问题"
+            answer = trace_res[1] if trace_res and trace_res[1] else "未生成回答"
+            
+            # 【修复点2】将结构化数据转为自然语言，防止 Ragas 看不懂 JSON 导致忠实度 0 分
+            contexts_raw = json.loads(output_data) if output_data else ""
+            
+            def dict_to_nl(d):
+                if not isinstance(d, dict): return str(d)
+                lines = []
+                for k, v in d.items():
+                    if isinstance(v, dict):
+                        lines.append(f"{k} 包含以下属性: {', '.join([f'{sub_k}为{sub_v}' for sub_k, sub_v in v.items()])}")
+                    else:
+                        lines.append(f"{k} 为 {v}")
+                return "；".join(lines)
+
+            if isinstance(contexts_raw, list):
+                contexts = [dict_to_nl(c) if isinstance(c, dict) else str(c) for c in contexts_raw]
+            elif isinstance(contexts_raw, dict):
+                contexts = [dict_to_nl(contexts_raw)]
+            else:
+                contexts = [str(contexts_raw)] if contexts_raw else [""]
             
             samples.append({
-                "question": question,
+                "question": user_query,
                 "answer": answer,
                 "contexts": contexts,
                 "trace_id": trace_id
@@ -89,9 +109,15 @@ def execute_ragas():
         "answer": [s["answer"] for s in samples],
         "contexts": [s["contexts"] for s in samples]
     }
+    
+    dataset_dict = {
+        "question": [s["question"] for s in samples],
+        "answer": [s["answer"] for s in samples],
+        "contexts": [s["contexts"] for s in samples]
+    }
     eval_dataset = Dataset.from_dict(dataset_dict)
     
-    # 启动评估 (仅包含无需标准答案的指标)
+    # 启动评估
     result = evaluate(
         dataset=eval_dataset,
         metrics=[faithfulness, answer_relevancy],
@@ -109,13 +135,17 @@ def execute_ragas():
         
         # 写入 faithfulness
         f_score = row.get("faithfulness", 0.0)
-        conn.execute("INSERT INTO eval_score (eval_id, trace_id, metric_name, score, timestamp) VALUES (?, ?, ?, ?, ?)",
-                     (str(uuid.uuid4()), trace_id, "ragas_faithfulness", f_score, eval_time))
+        if pd.isna(f_score): f_score = 0.0  # 防止 API 超时返回 NaN 导致报错
+        
+        conn.execute("INSERT INTO eval_score (eval_id, trace_id, metric_name, score, reason, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                     (str(uuid.uuid4()), trace_id, "ragas_faithfulness", f_score, "RAGAS客观指标(无文字解释)", eval_time))
                      
         # 写入 answer_relevancy
         r_score = row.get("answer_relevancy", 0.0)
-        conn.execute("INSERT INTO eval_score (eval_id, trace_id, metric_name, score, timestamp) VALUES (?, ?, ?, ?, ?)",
-                     (str(uuid.uuid4()), trace_id, "ragas_answer_relevancy", r_score, eval_time))
+        if pd.isna(r_score): r_score = 0.0
+        
+        conn.execute("INSERT INTO eval_score (eval_id, trace_id, metric_name, score, reason, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                     (str(uuid.uuid4()), trace_id, "ragas_answer_relevancy", r_score, "RAGAS客观指标(无文字解释)", eval_time))
                      
     conn.commit()
     conn.close()

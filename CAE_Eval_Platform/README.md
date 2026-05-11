@@ -19,7 +19,7 @@ CAE_Eval_Platform/
 ├── reset_eval.py         # 评估数据重置工具
 ├── requirements.txt      # Python 依赖清单
 ├── traces.db             # SQLite 运行时数据库（自动生成）
-└── technical_report.md   # 项目技术报告文档
+└── README.md             # 项目技术报告文档
 ```
 
 ---
