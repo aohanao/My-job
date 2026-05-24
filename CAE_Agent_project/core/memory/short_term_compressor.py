@@ -12,14 +12,33 @@ llm = ChatOpenAI(
 )
 
 def compressor_node(state: CAEAgentState):
-    """滑窗摘要核心逻辑。拦截过长上下文，生成高密摘要并销毁冗余的原始流"""
+    """滑窗摘要核心逻辑。新增水位线预警 (Harness Engineering)"""
     messages = state.get("messages", [])
     
-    # 如果总消息没超过12条 (约6次对话往返)，则安然无恙，直接放行
+    # --- 1. 探针设计：计算水位线 (近似估算 token) ---
+    MAX_TOKENS = 8000  # 假设窗口设计容量
+    WARNING_THRESHOLD = 0.40  # 40% 预警线
+    
+    current_chars = sum(len(m.content) for m in messages if hasattr(m, 'content') and isinstance(m.content, str))
+    # 粗略估算：中文和英文混合环境，1 token 约等于 2-3 个字符，我们按保守 2 字符估算
+    estimated_tokens = current_chars / 2.0
+    usage_percent = min(estimated_tokens / MAX_TOKENS, 1.0)
+    
+    is_warning = usage_percent >= WARNING_THRESHOLD
+    
+    state_updates = {
+        "context_usage_percent": usage_percent,
+        "context_warning": is_warning
+    }
+    
+    if is_warning:
+        print(f"\n[MemManager] ⚠️ 触发 Harness 预警机制: 上下文水位 {usage_percent*100:.1f}%，超过安全阈值 {WARNING_THRESHOLD*100}%！")
+
+    # --- 2. 物理截断：消息数超过上限时触发 ---
     if len(messages) <= 12:
-        return {}
+        return state_updates
         
-    print(f"\n[MemManager] 🧹 警报！上下文已逼近红线 (当前量: {len(messages)})！启动自动瘦身修剪协议...")
+    print(f"\n[MemManager] 🧹 上下文消息数 (当前: {len(messages)}) 触顶，启动深度瘦身修剪协议...")
     
     # 切割阈值：永远只保留最近的 4 条原句，其余的全砍！
     keep = 4
@@ -45,11 +64,14 @@ def compressor_node(state: CAEAgentState):
             
         print(f"[MemManager] 💾 提纯完毕！获得超密度记忆结晶：\n{new_summary[:80]}...")
 
-        # 对旧时代残党下达清除令 (用 LangGraph 原生的神技 RemoveMessage)
+        # 对旧时代残党下达清除令
         delete_orders = [RemoveMessage(id=m.id) for m in old_messages if m.id]
         
-        return {"messages": delete_orders, "context_summary": final_summary}
+        state_updates["messages"] = delete_orders
+        state_updates["context_summary"] = final_summary
+        
+        return state_updates
         
     except Exception as e:
         print(f"[MemManager] 瘦身异常: {e}")
-        return {}
+        return state_updates

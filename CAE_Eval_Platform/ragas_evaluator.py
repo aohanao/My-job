@@ -117,12 +117,16 @@ def execute_ragas():
     }
     eval_dataset = Dataset.from_dict(dataset_dict)
     
+    # 为各指标显式挂载模型实例以兼容新版 Ragas
+    for metric in [faithfulness, answer_relevancy]:
+        metric.llm = llm
+        if hasattr(metric, "embeddings"):
+            metric.embeddings = embeddings
+            
     # 启动评估
     result = evaluate(
         dataset=eval_dataset,
         metrics=[faithfulness, answer_relevancy],
-        llm=llm,
-        embeddings=embeddings,
         raise_exceptions=False
     )
     

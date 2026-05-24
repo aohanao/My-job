@@ -57,6 +57,11 @@ class AgentExperienceManager:
             print(f"[LongTermMem] 唤起记忆发生故障: {e}")
             return ""
 
+_manager_instance = None
+
 # 获取单例
 def get_experience_manager():
-    return AgentExperienceManager()
+    global _manager_instance
+    if _manager_instance is None:
+        _manager_instance = AgentExperienceManager()
+    return _manager_instance

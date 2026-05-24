@@ -11,7 +11,7 @@ services:
     volumes:
       # 挂载 session 文件夹以实现本地持久化
       - ./sessions:/app/sessions
-      - ./checkpoints.sqlite:/app/checkpoints.sqlite
+      - ./.data:/app/.data
       # (可选) 如果你需要在宿主机运行 Abaqus，可以通过 volume/网络代理，但这需要根据 Abaqus API 适配
       # - /path/to/host/abaqus_workspace:/app/sandbox
     stdin_open: true # 对于 CLI 程序 main.py 这是必须要能够接收 input() 的设置

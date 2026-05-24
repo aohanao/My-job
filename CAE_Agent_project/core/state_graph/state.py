@@ -28,7 +28,6 @@ class CAEAgentState(TypedDict):
     consensus_params: Annotated[Dict[str, Any], merge_dicts]
 
     # 可观测性
-    trace_id: Optional[str]
     is_confirmed: bool  # 是否已通过人工确认
 
     # 仿真结果透传
@@ -36,6 +35,10 @@ class CAEAgentState(TypedDict):
     generated_code: Optional[str]
     result_dir: Optional[str]
 
+    # 记忆压缩与预警机制 (参照 Harness Engineering 设计)
+    context_summary: Optional[str]
+    context_usage_percent: float   # 上下文水位线百分比 (0.0 ~ 1.0)
+    context_warning: bool          # 是否触发预警 (通常 >= 0.4)
 
 # ═══════════════════════════════════════════════════════════════
 # 仿真流水线子图状态 — 与主图重叠的字段 + 局部字段
@@ -46,11 +49,10 @@ class SimPipelineState(TypedDict):
     messages: Annotated[List[Any], add_messages]
     selected_skill: str
     consensus_params: Annotated[Dict[str, Any], merge_dicts]
-    trace_id: Optional[str]
     is_confirmed: bool # 🌟 是否已通过人工确认
 
     # ─── 仿真流水线局部字段 ───
-    extracted_params: Dict[str, Any]
+    extracted_params: Annotated[Dict[str, Any], merge_dicts]
     param_errors: Optional[str] 
     retry_count: int
     generated_code: Optional[str]

@@ -412,11 +412,13 @@ if selected_trace_id:
         # -----------------------------------------------------
         # 2. 节点级 I/O 联动面板 (Linked Detail Panel)
         # -----------------------------------------------------
-        st.markdown("#### 🗂️ 节点联动观测面板")
-        
-        df_spans['dropdown_label'] = df_spans.apply(lambda x: f"{x['span_name']} ({x['span_type']})", axis=1)
-        span_options = df_spans['dropdown_label'].tolist()
-        selected_label = st.selectbox("🎯 快速聚焦节点:", span_options, index=0)
+        if not df_spans.empty:
+            df_spans['dropdown_label'] = df_spans.apply(lambda x: f"{x['span_name']} ({x['span_type']})", axis=1)
+            span_options = df_spans['dropdown_label'].tolist()
+            selected_label = st.selectbox("🎯 快速聚焦节点:", span_options)
+        else:
+            selected_label = None
+            st.info("此 Trace 未记录任何被执行的子节点 Span。")
         
         if selected_label:
             selected_span = df_spans[df_spans['dropdown_label'] == selected_label].iloc[0]

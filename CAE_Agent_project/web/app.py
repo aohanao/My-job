@@ -20,8 +20,8 @@ if sys.platform == 'win32':
 nest_asyncio.apply()
 
 from core.state_graph.builder import build_cae_graph
-from integrations.mcp_client.mcp_manager import RAGConnectionManager
-from core.tracer import tracer
+from integrations.mcp_client.mcp_manager import MCPConnectionManager, StdioConnectionManager
+from core.eval_sdk import EvalPlatformCallback
 from langgraph.checkpoint.memory import MemorySaver
 
 # 页面配置
@@ -42,18 +42,32 @@ async def init_mcp_and_graph(session_id: str):
         st.session_state.agent_memory = MemorySaver()
 
     if "mcp_manager" not in st.session_state:
-        st.session_state.mcp_manager = RAGConnectionManager()
-        manager = st.session_state.mcp_manager
+        st.session_state.mcp_manager = MCPConnectionManager()
+        st.session_state.tools_manager = StdioConnectionManager()
+        
+        all_tools = []
         try:
-            await manager.connect("http://127.0.0.1:8000/sse")
-            st.session_state.rag_tools = await manager.get_all_rag_tools()
+            # 1. 尝试连接 RAG 服务器 (SSE)
+            await st.session_state.mcp_manager.connect("http://127.0.0.1:8000/sse")
+            rag_tools = await st.session_state.mcp_manager.get_tools()
+            all_tools.extend(rag_tools)
             st.session_state.mcp_connected = True
         except Exception as e:
             st.session_state.mcp_connected = False
             st.session_state.mcp_error = str(e)
-            st.session_state.rag_tools = []
             
-    if "agent_app" not in st.session_state:
+        try:
+            # 2. 尝试连接我们在 sandbox 里刚写的简单工具集 (Stdio)
+            python_exe = sys.executable
+            tools_script = os.path.join(_ROOT_DIR, "integrations", "local_tools_server.py")
+            await st.session_state.tools_manager.connect(python_exe, [tools_script])
+            simple_tools = await st.session_state.tools_manager.get_tools()
+            all_tools.extend(simple_tools)
+            print(f"[App] ✅ 成功加载 {len(simple_tools)} 个本地测试工具: {[t.name for t in simple_tools]}")
+        except Exception as e:
+            print(f"[App] ⚠️ 加载本地测试工具失败: {e}")
+            
+        st.session_state.rag_tools = all_tools
         st.session_state.agent_app = build_cae_graph(
             checkpointer=st.session_state.agent_memory, 
             tools=st.session_state.rag_tools
@@ -88,11 +102,16 @@ async def run_agent_step(user_input: str, session_id: str):
     app = st.session_state.agent_app
     thread_config = {"configurable": {"thread_id": session_id}}
     
-    trace_id = tracer.start_trace(session_id, user_query=user_input)
+    # 🌟 使用零侵入探针
+    eval_callback = EvalPlatformCallback(
+        server_url=os.environ.get("EVAL_API_URL", "http://127.0.0.1:8001"),
+        session_id=session_id
+    )
+    thread_config["callbacks"] = [eval_callback]
+
     initial_input = {
         "messages": [HumanMessage(content=user_input)], 
         "retry_count": 0, 
-        "trace_id": trace_id,
         "is_confirmed": False,
         "param_errors": None,
         "code_errors": None,
@@ -102,7 +121,6 @@ async def run_agent_step(user_input: str, session_id: str):
         "action_type": None
     }
     status_placeholder = st.empty()
-    active_spans = {} 
 
     # 先在界面显示用户当前输入，给用户即时反馈，但不污染真实状态数组
     user_msg = HumanMessage(content=user_input)
@@ -123,7 +141,6 @@ async def run_agent_step(user_input: str, session_id: str):
                     with st.chat_message("assistant"):
                         # 模拟打字机流式效果
                         def stream_generator():
-                            # 按字符稍微停顿，模拟真实的流式输出感
                             chunk_size = 3
                             for i in range(0, len(msg.content), chunk_size):
                                 yield msg.content[i:i+chunk_size]
@@ -172,37 +189,12 @@ async def run_agent_step(user_input: str, session_id: str):
                         # 仅负责将流式中生成的新消息实时显示
                         render_msg(msg)
 
-                        if hasattr(msg, "tool_calls") and msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                if tc["name"] in ("lookup_cae_knowledge", "lookup_local_material_db"):
-                                    active_spans["rag"] = {
-                                        "name": tc["name"],
-                                        "input": tc["args"],
-                                        "start": time.time()
-                                    }
-                        
-                        if isinstance(msg, ToolMessage) and active_spans.get("rag"):
-                            rag_span = active_spans["rag"]
-                            tracer.log_span(
-                                trace_id=trace_id, span_type="TOOL", 
-                                span_name=rag_span["name"],
-                                start_time=rag_span["start"],
-                                input_data=rag_span["input"],
-                                output_data=msg.content, 
-                                status="SUCCESS"
-                            )
-                            active_spans["rag"] = None
-
                 if isinstance(output, dict) and "consensus_params" in output:
                     new_params = output["consensus_params"]
                     if new_params:
                         st.session_state.consensus_params.update(new_params)
                         # 在侧边栏占位符中实时同步参数
                         sync_sidebar_params(st.session_state.consensus_params)
-                        
-                tracer.log_span(trace_id=trace_id, span_type="NODE", span_name=node_name,
-                                start_time=time.time(), input_data={"node": node_name},
-                                output_data=str(output)[:100], status="SUCCESS")
 
                 if node_name == "ReviewParams":
                     st.session_state.waiting_for_approval = True
@@ -211,17 +203,6 @@ async def run_agent_step(user_input: str, session_id: str):
         
         # 🚀 【核心修复】推演结束后，强制与图节点真实状态对齐，杜绝错位！
         sync_state_from_graph(session_id)
-        
-        final_response_str = "Agent 推演结束"
-        total_tokens = 0
-        if st.session_state.chat_history:
-             ai_msgs = [m for m in st.session_state.chat_history if isinstance(m, AIMessage)]
-             if ai_msgs:
-                 last_ai = ai_msgs[-1]
-                 final_response_str = last_ai.content
-                 total_tokens = tracer.get_token_usage(last_ai)
-        
-        tracer.end_trace(trace_id, final_response=final_response_str, success_flag=True, total_tokens=total_tokens)
         
         st.session_state.is_running = False
         st.rerun()

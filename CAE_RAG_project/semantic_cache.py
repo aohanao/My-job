@@ -30,7 +30,7 @@ class SemanticCacheModule:
             # Langchain集成Chroma的分数计算机制，分数越长代表相似度越高 (或者L2转余弦)
             if score > threshold:
                 print(f"[RAG-SemCache] ⚡ 语义短路触发！命中极高相似历史 (相似度: {score:.2f})")
-                return doc.page_content
+                return doc.metadata.get("answer", "")
             return ""
         except Exception as e:
             print(f"[RAG-SemCache] 缓存探测异常: {e}")
@@ -41,9 +41,9 @@ class SemanticCacheModule:
         if not query or not answer:
             return
             
-        metadata = {"original_query": query, "type": "semantic_answer"}
+        metadata = {"answer": answer, "original_query": query, "type": "semantic_answer"}
         try:
-            self.chroma.add_texts(texts=[answer], metadatas=[metadata])
+            self.chroma.add_texts(texts=[query], metadatas=[metadata])
             print("[RAG-SemCache] 💾 新知识已凝固进缓存。")
         except Exception as e:
             print(f"[RAG-SemCache] 缓存写入失败: {e}")

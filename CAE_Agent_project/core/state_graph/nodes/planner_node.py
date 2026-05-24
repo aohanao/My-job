@@ -1,6 +1,5 @@
 # core/state_graph/nodes/planner_node.py
 from langchain_core.messages import SystemMessage, AIMessage
-from core.tracer import tracer
 import time
 from core.state_graph.state import CAEAgentState
 from core.state_graph.node_utils import get_memory_window, create_llm
@@ -11,6 +10,8 @@ llm = create_llm(model=config.PLANNER_MODEL, temperature=0.1)
 
 def planner_node(state: CAEAgentState, tools=None):
     """意图识别节点"""
+    node_start_time = time.time()
+    
     # 使用公共滑窗工具
     memory_window = get_memory_window(state)
 
@@ -100,17 +101,5 @@ def planner_node(state: CAEAgentState, tools=None):
     else:
         print(f"[Planner] ✅ 获取开工指令，准备进入仿真流程: {skill}")
         output = {"selected_skill": skill, "action_type": "simulate"}
-
-    # 🌟 轨迹埋点
-    trace_id = state.get("trace_id")
-    if trace_id:
-        tracer.log_span(
-            trace_id=trace_id,
-            span_type="NODE",
-            span_name="planner_node",
-            start_time=time.time(),
-            input_data={"query": query},
-            output_data=output
-        )
 
     return output

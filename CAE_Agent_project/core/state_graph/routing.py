@@ -21,7 +21,12 @@ def route_after_planner(state):
 
 
 def route_after_extractor(state):
-    """Extractor 之后的路由 — 已复原为全自动模式"""
+    """Extractor 之后的路由 — 支持 Reflexion 自愈与人机交互"""
+    errors = state.get("param_errors")
+    if errors == "HIT_INTERRUPT":
+        return "WaitHuman"
+    if errors and state.get("retry_count", 0) < 3:
+        return "Extractor"
     return "Coder"
 
 
@@ -35,3 +40,10 @@ def route_after_coder(state):
     if state.get("code_errors"):
         return "Retry"
     return "Execute"
+
+
+def route_after_executor(state):
+    """Executor 之后的路由 — 仿真报错折返至 Extractor"""
+    if state.get("error_log") and state.get("retry_count", 0) < 3:
+        return "ReExtract"
+    return "End"

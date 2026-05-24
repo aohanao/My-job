@@ -5,7 +5,9 @@ langchain-core
 python-dotenv
 pydantic
 mcp
-streamlit
+fastapi
+uvicorn
+langchain-chroma
 nest_asyncio
 
 # 测试依赖

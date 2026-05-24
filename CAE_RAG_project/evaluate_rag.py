@@ -65,7 +65,8 @@ def run_benchmark():
     print(f"🚀 正在针对 {dataset_name} 执行自动化评估...")
     
     # 启动评估流
-    results = client.run_on_dataset(
+    results = run_on_dataset(
+        client=client,
         dataset_name=dataset_name,
         llm_or_chain_factory=target,
         evaluation=eval_config,

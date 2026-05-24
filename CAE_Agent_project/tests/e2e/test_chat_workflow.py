@@ -1,6 +1,6 @@
 """端到端测试 - 聊天工作流"""
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from langchain_core.messages import HumanMessage, AIMessage
 
 
@@ -36,10 +36,10 @@ class TestChatWorkflow:
 
             # Mock Chat响应
             mock_chat_llm.bind_tools.return_value = mock_chat_llm
-            mock_chat_llm.invoke.return_value = AIMessage(
+            mock_chat_llm.ainvoke = AsyncMock(return_value=AIMessage(
                 content="子弹冲击仿真需要钢板的弹性模量、密度等参数",
                 tool_calls=[]
-            )
+            ))
 
             # 构建图
             memory = MemorySaver()
@@ -95,7 +95,7 @@ class TestChatWorkflow:
 
             call_count = [0]
 
-            def mock_invoke(messages, **kwargs):
+            async def mock_ainvoke(messages, **kwargs):
                 call_count[0] += 1
                 if call_count[0] == 1:
                     # 第一次：调用工具
@@ -114,7 +114,7 @@ class TestChatWorkflow:
                         tool_calls=[]
                     )
 
-            mock_chat_llm.invoke.side_effect = mock_invoke
+            mock_chat_llm.ainvoke = mock_ainvoke
 
             # Mock材料查询工具
             mock_tool = Mock()
@@ -167,10 +167,10 @@ class TestChatWorkflow:
 
             # Mock Chat
             mock_chat_llm.bind_tools.return_value = mock_chat_llm
-            mock_chat_llm.invoke.return_value = AIMessage(
+            mock_chat_llm.ainvoke = AsyncMock(return_value=AIMessage(
                 content="根据历史经验，推荐使用钢板厚度20mm",
                 tool_calls=[]
-            )
+            ))
 
             memory = MemorySaver()
             app = build_cae_graph(checkpointer=memory, tools=[])
@@ -258,7 +258,7 @@ class TestMultiTurnChat:
             mock_exp.return_value = mock_exp_manager
 
             mock_chat_llm.bind_tools.return_value = mock_chat_llm
-            mock_chat_llm.invoke.return_value = AIMessage(content="回复", tool_calls=[])
+            mock_chat_llm.ainvoke = AsyncMock(return_value=AIMessage(content="回复", tool_calls=[]))
 
             memory = MemorySaver()
             app = build_cae_graph(checkpointer=memory, tools=[])

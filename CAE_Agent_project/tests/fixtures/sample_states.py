@@ -10,8 +10,7 @@ INITIAL_STATE = {
     "user_query": "我想做一个子弹冲击钢板的仿真",
     "selected_skill": "",
     "action_type": None,
-    "consensus_params": {},
-    "trace_id": "test-trace-001"
+    "consensus_params": {}
 }
 
 STATE_AFTER_PLANNER_CHAT = {
@@ -23,8 +22,7 @@ STATE_AFTER_PLANNER_CHAT = {
     "user_query": "子弹冲击需要什么材料参数？",
     "selected_skill": "bullet_impact",
     "action_type": "chat",
-    "consensus_params": {},
-    "trace_id": "test-trace-002"
+    "consensus_params": {}
 }
 
 STATE_AFTER_PLANNER_SIMULATE = {
@@ -40,8 +38,7 @@ STATE_AFTER_PLANNER_SIMULATE = {
     "consensus_params": {
         "plate_thickness": 20.0,
         "bullet_radius": 20.0
-    },
-    "trace_id": "test-trace-003"
+    }
 }
 
 
@@ -51,7 +48,6 @@ SIM_PIPELINE_INITIAL_STATE = {
     "messages": [HumanMessage(content="开始仿真")],
     "selected_skill": "bullet_impact",
     "consensus_params": {},
-    "trace_id": "test-trace-004",
     "user_query": "开始仿真",
     "extracted_params": {},
     "generated_code": None,
@@ -67,7 +63,6 @@ SIM_PIPELINE_AFTER_EXTRACTOR = {
     "messages": [HumanMessage(content="开始仿真")],
     "selected_skill": "bullet_impact",
     "consensus_params": {},
-    "trace_id": "test-trace-005",
     "user_query": "开始仿真",
     "extracted_params": {
         "status": "success",
@@ -98,7 +93,6 @@ SIM_PIPELINE_AFTER_CODER = {
     "messages": [HumanMessage(content="开始仿真")],
     "selected_skill": "bullet_impact",
     "consensus_params": {},
-    "trace_id": "test-trace-006",
     "user_query": "开始仿真",
     "extracted_params": {
         "geometry": {"plate_thickness": 20.0},
@@ -118,7 +112,6 @@ SIM_PIPELINE_WITH_PARAM_ERROR = {
     "messages": [HumanMessage(content="开始仿真")],
     "selected_skill": "bullet_impact",
     "consensus_params": {},
-    "trace_id": "test-trace-007",
     "user_query": "开始仿真",
     "extracted_params": {
         "geometry": {"plate_thickness": -5.0},  # 错误参数
@@ -136,7 +129,6 @@ SIM_PIPELINE_WITH_CODE_ERROR = {
     "messages": [HumanMessage(content="开始仿真")],
     "selected_skill": "bullet_impact",
     "consensus_params": {},
-    "trace_id": "test-trace-008",
     "user_query": "开始仿真",
     "extracted_params": {
         "geometry": {"plate_thickness": 20.0},
@@ -165,6 +157,5 @@ STATE_WITH_MEMORY = {
     "user_query": "第三个问题",
     "selected_skill": "bullet_impact",
     "action_type": "chat",
-    "consensus_params": {"plate_thickness": 20.0},
-    "trace_id": "test-trace-009"
+    "consensus_params": {"plate_thickness": 20.0}
 }

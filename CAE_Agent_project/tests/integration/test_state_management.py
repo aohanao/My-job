@@ -42,7 +42,6 @@ class TestStateTransitions:
             "selected_skill",
             "action_type",
             "consensus_params",
-            "trace_id",
             "is_confirmed",
             "script_path",
             "generated_code",
@@ -63,7 +62,6 @@ class TestStateTransitions:
             "messages",
             "selected_skill",
             "consensus_params",
-            "trace_id",
             "is_confirmed",
             "extracted_params",
             "param_errors",
@@ -92,7 +90,6 @@ class TestStateTransitions:
             "messages",
             "selected_skill",
             "consensus_params",
-            "trace_id",
             "is_confirmed",
         }
 
@@ -186,7 +183,6 @@ class TestStateInitialization:
         assert "messages" in state
         assert len(state["messages"]) > 0
         assert state["consensus_params"] == {}
-        assert state["trace_id"] is not None
 
     def test_pipeline_state_initialization(self):
         """测试流水线状态初始化"""
@@ -209,7 +205,6 @@ class TestStateValidation:
             "selected_skill": "bullet_impact",
             "action_type": "chat",
             "consensus_params": {},
-            "trace_id": "test-001",
             "is_confirmed": False,
             "script_path": None,
             "generated_code": None,
@@ -219,7 +214,7 @@ class TestStateValidation:
         # 状态应该有效
         assert all(key in state for key in [
             "messages", "selected_skill", "action_type",
-            "consensus_params", "trace_id", "is_confirmed",
+            "consensus_params", "is_confirmed",
         ])
 
     def test_state_field_types(self):
@@ -230,4 +225,3 @@ class TestStateValidation:
         assert isinstance(state["selected_skill"], str)
         assert isinstance(state["action_type"], str)
         assert isinstance(state["consensus_params"], dict)
-        assert isinstance(state["trace_id"], str)

@@ -120,8 +120,11 @@ CAE_Agent_project/
 ├── integrations/           # 🔌 外部集成层 (External Adaptors)
 │   ├── mcp_client/         # RAG 知识库 MCP 联动
 │   └── cae_host_bridge/    # 宿主机 Abaqus 网关
-├── web/                    # 🌐 交互展示层
-│   └── app.py              # Streamlit 监控仪表盘
+├── web/                    # 🌐 交互展示层 (Web Console)
+│   ├── app.py              # Streamlit 监控仪表盘 (原前端)
+│   ├── app_server.py       # FastAPI 智能体座舱后端 (新前端提供 WebSocket 对话)
+│   └── static/
+│       └── index.html      # 🆕 新版赛博朋克极光暗黑风智能体仿真座舱页面 (HTML+CSS+Vue.js)
 ├── main.py                 # CLI 终端执行入口
 └── tracer.py               # 全链路监控探针 (Tracing)
 ```
@@ -204,7 +207,7 @@ CAE 仿真交付场景下，参数链条长且物理耦合度极高。传统的 
 1.  **初始化环境**: `pip install -r requirements.txt`
 2.  **本地工具配置**: 设置环境变量 `TOOL_BACKEND=local` 或启动 MCP Server 模式。
 3.  **Abaqus 连接**: 请在 `.env` 中确保 `ABAQUS_BAT_PATH` 与物理机路径严格一致。
-4.  **启动 Web 交互端**: `streamlit run web/app.py`
+4.  **启动 Web 交互端**: `python web/app_server.py` 并访问 `http://localhost:8501` (全新极客座舱) ；也可运行 `streamlit run web/app.py` (原 Streamlit 交互端)
 5.  *(可选)* 启动 CLI 端: `python main.py`。
 
 ---

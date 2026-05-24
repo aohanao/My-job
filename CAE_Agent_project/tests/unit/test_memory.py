@@ -19,7 +19,10 @@ class TestShortTermCompressor:
         }
 
         result = compressor_node(state)
-        assert result == {}, "消息数量未超过12条时应返回空字典"
+        assert "messages" not in result, "消息数量未超过12条时不应返回消息删除指令"
+        assert "context_summary" not in result, "消息数量未超过12条时不应返回压缩摘要"
+        assert "context_usage_percent" in result, "应返回上下文使用率"
+        assert result.get("context_warning") is False, "使用率低时不应触发报警"
 
     def test_compression_when_over_threshold(self, monkeypatch):
         """测试消息数量超过阈值时触发压缩"""
@@ -130,8 +133,11 @@ class TestShortTermCompressor:
 
         result = compressor_node(state)
 
-        # 发生错误时应返回空字典
-        assert result == {}
+        # 发生错误时应仅返回水位线和警告相关状态，且不生成删除指令与新摘要
+        assert "messages" not in result
+        assert "context_summary" not in result
+        assert "context_usage_percent" in result
+        assert result.get("context_warning") is False
 
     def test_compression_with_messages_without_id(self, monkeypatch):
         """测试处理没有ID的消息（无ID的消息不会生成RemoveMessage）"""

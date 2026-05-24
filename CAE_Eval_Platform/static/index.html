@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentOps 智能观测平台</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            bg: '#030712',
+                            card: '#0f172a',
+                            border: '#1e293b',
+                            primary: '#6366f1',
+                            success: '#10b981',
+                            error: '#ef4444',
+                            warning: '#f59e0b',
+                            llm: '#ec4899',
+                            node: '#818cf8',
+                            tool: '#34d399'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        /* 🌌 极光暗调网格背景 */
+        body {
+            background-color: #030712;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.12) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%),
+                linear-gradient(rgba(255, 255, 255, 0.005) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.005) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        /* 🪟 高级玻璃拟态卡片 (Enhanced Glassmorphism) */
+        .glass-card {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.15);
+            position: relative;
+            overflow: hidden;
+        }
+        .glass-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: -100%;
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.02), transparent);
+            transition: 0.5s;
+        }
+        .glass-card:hover::before {
+            left: 100%;
+        }
+        .glass-card:hover {
+            transform: translateY(-2px);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            box-shadow: 0 12px 30px rgba(99, 102, 241, 0.08);
+            background: rgba(15, 23, 42, 0.6);
+        }
+
+        /* 霓虹发光文字 */
+        .neon-text-indigo {
+            text-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+        }
+        .neon-text-emerald {
+            text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.6);
+        }
+
+        /* 呼吸动画 */
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.6; box-shadow: 0 0 5px rgba(16, 185, 129, 0.4); }
+            50% { opacity: 1; box-shadow: 0 0 15px rgba(16, 185, 129, 0.8); }
+        }
+        .active-pulse {
+            animation: pulse-glow 2s infinite;
+        }
+
+        /* 脉冲加载骨架 */
+        @keyframes skeleton-pulse {
+            0%, 100% { background-color: rgba(30, 41, 59, 0.5); }
+            50% { background-color: rgba(30, 41, 59, 0.8); }
+        }
+        .skeleton {
+            animation: skeleton-pulse 1.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-6 min-h-screen">
+    <div id="app" v-cloak class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- 📡 顶部导航栏 -->
+        <header class="glass-card rounded-2xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                    <i data-lucide="radio" class="w-6 h-6 text-white animate-pulse"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent flex items-center gap-2">
+                        CAE AgentOps 智能评估平台
+                    </h1>
+                    <p class="text-xs text-slate-400">CAE Agent 全链路运行轨迹与评估舱</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <!-- 实时监控状态 -->
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-800">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" :class="{'active-pulse': isAutoRefresh}"></span>
+                    <span class="text-xs text-slate-300 font-medium">实时监听</span>
+                    <label class="relative inline-flex items-center cursor-pointer ml-1">
+                        <input type="checkbox" v-model="isAutoRefresh" class="sr-only peer">
+                        <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                </div>
+
+                <!-- 手动刷新按钮 -->
+                <button @click="fetchData" class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-sm font-semibold rounded-xl shadow-lg shadow-indigo-600/20 border border-indigo-500/30 transition duration-200">
+                    <i data-lucide="refresh-cw" class="w-4 h-4" :class="{'animate-spin': loading}"></i>
+                    <span>同步数据</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 📊 整体运行健康度 KPI 栏 -->
+        <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- 运行总数 -->
+            <div class="glass-card rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div class="flex justify-between items-center text-slate-400">
+                    <span class="text-xs font-semibold uppercase tracking-wider">总评估调用</span>
+                    <i data-lucide="layers" class="w-5 h-5 text-indigo-400"></i>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span class="text-3xl font-extrabold tracking-tight text-white" v-if="!statsLoading">{{ stats.total_runs }}</span>
+                    <div class="h-8 w-20 skeleton rounded" v-else></div>
+                    <span class="text-xs text-slate-400">Runs</span>
+                </div>
+            </div>
+
+            <!-- 成功率 -->
+            <div class="glass-card rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div class="flex justify-between items-center text-slate-400">
+                    <span class="text-xs font-semibold uppercase tracking-wider">任务闭环率</span>
+                    <i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-400"></i>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span class="text-3xl font-extrabold tracking-tight text-emerald-400 neon-text-emerald" v-if="!statsLoading">
+                        {{ stats.success_rate }}%
+                    </span>
+                    <div class="h-8 w-24 skeleton rounded" v-else></div>
+                    <span class="text-xs text-slate-400">Success</span>
+                </div>
+            </div>
+
+            <!-- Token消耗 -->
+            <div class="glass-card rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div class="flex justify-between items-center text-slate-400">
+                    <span class="text-xs font-semibold uppercase tracking-wider">累计 Token 消耗</span>
+                    <i data-lucide="cpu" class="w-5 h-5 text-pink-400"></i>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span class="text-3xl font-extrabold tracking-tight text-white" v-if="!statsLoading">
+                        {{ formatNumber(stats.total_tokens) }}
+                    </span>
+                    <div class="h-8 w-28 skeleton rounded" v-else></div>
+                    <span class="text-xs text-slate-400">Tokens</span>
+                </div>
+            </div>
+
+            <!-- 平均延迟 -->
+            <div class="glass-card rounded-2xl p-5 flex flex-col justify-between min-h-[110px]">
+                <div class="flex justify-between items-center text-slate-400">
+                    <span class="text-xs font-semibold uppercase tracking-wider">平均执行耗时</span>
+                    <i data-lucide="clock" class="w-5 h-5 text-amber-400"></i>
+                </div>
+                <div class="mt-2 flex items-baseline gap-2">
+                    <span class="text-3xl font-extrabold tracking-tight text-white" v-if="!statsLoading">{{ stats.avg_latency }}s</span>
+                    <div class="h-8 w-20 skeleton rounded" v-else></div>
+                    <span class="text-xs text-slate-400">Latency</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 💡 知识库质量监控舱 (RAGAS) -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- RAGAS 评估雷达/平均指标 -->
+            <div class="glass-card rounded-2xl p-5 lg:col-span-1 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                        <i data-lucide="activity" class="w-4 h-4 text-pink-500"></i>
+                        知识库质量评分 (RAGAS)
+                    </h3>
+                    <div class="grid grid-cols-2 gap-4 mt-2">
+                        <div class="p-3 bg-slate-900/50 border border-slate-800 rounded-xl text-center">
+                            <div class="text-xs text-slate-400 font-semibold mb-1">平均忠实度</div>
+                            <div class="text-2xl font-extrabold text-indigo-400 neon-text-indigo" v-if="!statsLoading">
+                                {{ stats.avg_faithfulness }}
+                            </div>
+                            <div class="h-6 w-16 skeleton rounded mx-auto" v-else></div>
+                            <div class="text-[10px] text-slate-500 mt-1">Faithfulness</div>
+                        </div>
+                        <div class="p-3 bg-slate-900/50 border border-slate-800 rounded-xl text-center">
+                            <div class="text-xs text-slate-400 font-semibold mb-1">平均回答相关度</div>
+                            <div class="text-2xl font-extrabold text-pink-400" v-if="!statsLoading">
+                                {{ stats.avg_answer_relevancy }}
+                            </div>
+                            <div class="h-6 w-16 skeleton rounded mx-auto" v-else></div>
+                            <div class="text-[10px] text-slate-500 mt-1">Answer Relevancy</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 pt-4 border-t border-slate-800/50">
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        评分指标基于 LLM-as-a-Judge 自动执行，0.8分以上代表检索无明显幻觉且回答精确对应。
+                    </p>
+                </div>
+            </div>
+
+            <!-- RAGAS 历史得分曲线 -->
+            <div class="glass-card rounded-2xl p-5 lg:col-span-2 flex flex-col">
+                <h3 class="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                    <i data-lucide="trending-up" class="w-4 h-4 text-emerald-500"></i>
+                    评估质量趋势历史 (RAGAS Scores Timeline)
+                </h3>
+                <div class="flex-grow min-h-[160px] relative flex items-center justify-center">
+                    <canvas id="ragasTrendChart" class="w-full max-h-[180px]"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- 🔍 链路追踪探查器 (Trace Explorer) -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- 左侧：Trace 历史追踪列表 -->
+            <div class="glass-card rounded-2xl p-5 lg:col-span-1 flex flex-col h-[520px]">
+                <div class="mb-4">
+                    <h3 class="text-sm font-bold text-slate-300 flex items-center gap-2 mb-3">
+                        <i data-lucide="history" class="w-4 h-4 text-indigo-400"></i>
+                        历史追踪记录 (Trace Logs)
+                    </h3>
+                    <!-- 搜索框 -->
+                    <div class="relative">
+                        <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-slate-500"></i>
+                        <input type="text" v-model="searchQuery" placeholder="搜索请求语句或 ID..." class="w-full bg-slate-900/80 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                </div>
+
+                <!-- Trace 列表展示 -->
+                <div class="flex-grow overflow-y-auto space-y-3 pr-1">
+                    <div v-if="filteredTraces.length === 0" class="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
+                        <i data-lucide="database-backup" class="w-8 h-8 mb-2 opacity-40"></i>
+                        暂无相关追踪记录
+                    </div>
+                    
+                    <div v-for="trace in filteredTraces" 
+                         :key="trace.trace_id"
+                         @click="selectTrace(trace.trace_id)"
+                         :class="['glass-card rounded-xl p-3.5 cursor-pointer border transition-all duration-200', 
+                                  selectedTraceId === trace.trace_id ? 'border-indigo-500/50 bg-indigo-950/20' : 'border-slate-800/30 hover:border-slate-700/50']">
+                        
+                        <div class="flex justify-between items-start gap-2 mb-2">
+                            <span class="text-[10px] font-mono text-slate-500 uppercase truncate max-w-[120px]">
+                                ID: {{ trace.trace_id.substring(0, 8) }}...
+                            </span>
+                            <span :class="['px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wide', 
+                                          trace.success_flag ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400']">
+                                {{ trace.success_flag ? 'SUCCESS' : 'FAILED' }}
+                            </span>
+                        </div>
+                        
+                        <p class="text-xs text-slate-200 font-medium line-clamp-2 mb-3">
+                            {{ trace.user_query }}
+                        </p>
+                        
+                        <div class="flex items-center justify-between text-[10px] text-slate-500">
+                            <span class="flex items-center gap-1">
+                                <i data-lucide="clock" class="w-3 h-3"></i>
+                                {{ trace.latency }}s
+                            </span>
+                            <span class="flex items-center gap-1">
+                                <i data-lucide="cpu" class="w-3 h-3"></i>
+                                {{ formatNumber(trace.total_tokens) }}
+                            </span>
+                            <span>{{ formatTime(trace.timestamp) }}</span>
+                        </div>
+
+                        <!-- 含有评分的 trace 浮标 -->
+                        <div class="flex gap-2 mt-2 pt-2 border-t border-slate-800/40" v-if="trace.faithfulness !== null || trace.answer_relevancy !== null">
+                            <span class="text-[9px] bg-slate-900 text-slate-400 px-1.5 py-0.5 rounded" v-if="trace.faithfulness !== null">
+                                忠实度: {{ trace.faithfulness }}
+                            </span>
+                            <span class="text-[9px] bg-slate-900 text-slate-400 px-1.5 py-0.5 rounded" v-if="trace.answer_relevancy !== null">
+                                相关度: {{ trace.answer_relevancy }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：详细链路瀑布流甘特图与 I/O 联动 -->
+            <div class="glass-card rounded-2xl p-5 lg:col-span-2 flex flex-col h-[520px] overflow-hidden">
+                <div v-if="!selectedTraceId" class="flex flex-col items-center justify-center h-full text-slate-400">
+                    <i data-lucide="git-commit" class="w-12 h-12 mb-3 text-indigo-400 animate-pulse"></i>
+                    <p class="text-sm font-semibold">请在左侧选择一条 Trace 记录</p>
+                    <p class="text-xs text-slate-500 mt-1">即可探查其完整的链路执行时序与输入输出负载</p>
+                </div>
+
+                <div v-else class="flex flex-col h-full space-y-4">
+                    <!-- Trace 概览元数据 -->
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-800/60 pb-3 gap-2 flex-shrink-0">
+                        <div>
+                            <h4 class="text-xs font-mono text-indigo-400 font-semibold truncate max-w-[280px]">
+                                TRACE: {{ selectedTraceId }}
+                            </h4>
+                            <p class="text-xs text-slate-400 mt-0.5">
+                                会话 ID: {{ currentTraceDetail.trace?.session_id || 'N/A' }}
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-xl">
+                            <span class="flex items-center gap-1 text-slate-300">
+                                <i data-lucide="cpu" class="w-3.5 h-3.5 text-pink-400"></i>
+                                Tokens: <strong class="text-white">{{ currentTraceDetail.trace?.total_tokens }}</strong>
+                            </span>
+                            <span class="h-3 w-px bg-slate-800"></span>
+                            <span class="flex items-center gap-1 text-slate-300">
+                                <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400"></i>
+                                耗时: <strong class="text-white">{{ currentTraceDetail.trace?.latency }}s</strong>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- 瀑布流甘特图 (时序追踪区) -->
+                    <div class="flex-grow overflow-y-auto min-h-[160px] max-h-[220px] pr-1 space-y-2 border-b border-slate-800/40 pb-3">
+                        <div class="flex justify-between items-center text-[10px] text-slate-500 px-2">
+                            <span>执行节点/工具</span>
+                            <span>耗时分布 (总长 {{ currentTraceDetail.trace?.latency }}s)</span>
+                        </div>
+
+                        <!-- 每一个 Span -->
+                        <div v-for="span in currentTraceDetail.spans" 
+                             :key="span.span_id" 
+                             @click="selectSpan(span)"
+                             :class="['flex items-center gap-4 p-2 rounded-lg cursor-pointer transition',
+                                      selectedSpan?.span_id === span.span_id ? 'bg-indigo-500/10 border border-indigo-500/30' : 'border border-transparent hover:bg-slate-900/40']">
+                            
+                            <!-- 节点徽章 & 名称 -->
+                            <div class="w-1/3 truncate flex items-center gap-2">
+                                <span :class="['w-2 h-2 rounded-full', 
+                                              span.span_type === 'NODE' ? 'bg-indigo-400' : span.span_type === 'TOOL' ? 'bg-emerald-400' : 'bg-pink-400']">
+                                </span>
+                                <span class="text-xs font-semibold text-slate-200 truncate" :title="span.span_name">
+                                    {{ span.span_name }}
+                                </span>
+                                <span class="text-[9px] bg-slate-900 text-slate-400 px-1 py-0.2 rounded scale-90">
+                                    {{ span.span_type }}
+                                </span>
+                            </div>
+
+                            <!-- 甘特图条形条 -->
+                            <div class="flex-grow relative h-5 rounded bg-slate-950/60 overflow-hidden flex items-center">
+                                <div class="absolute h-full rounded transition-all duration-300"
+                                     :style="getSpanGanttStyle(span)"
+                                     :class="[span.span_type === 'NODE' ? 'bg-gradient-to-r from-indigo-500/80 to-indigo-600/80 shadow-[0_0_8px_rgba(99,102,241,0.2)]' : 
+                                              span.span_type === 'TOOL' ? 'bg-gradient-to-r from-emerald-400/80 to-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.2)]' : 
+                                              'bg-gradient-to-r from-pink-500/80 to-pink-600/80 shadow-[0_0_8px_rgba(236,72,153,0.2)]']">
+                                    
+                                    <span class="absolute left-2 text-[9px] font-bold text-white leading-5 select-none truncate">
+                                        {{ span.duration }}s
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 联动 I/O Payload 观察面板 -->
+                    <div class="h-[180px] flex flex-col flex-shrink-0">
+                        <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+                            <span class="font-bold flex items-center gap-1.5">
+                                <i data-lucide="terminal" class="w-3.5 h-3.5 text-indigo-400"></i>
+                                I/O Payload 联动观测: <strong class="text-slate-200" v-if="selectedSpan">{{ selectedSpan.span_name }}</strong>
+                            </span>
+                            <span class="text-[10px]" v-if="selectedSpan">
+                                状态: <strong :class="selectedSpan.status === 'SUCCESS' ? 'text-emerald-400' : 'text-red-400'">{{ selectedSpan.status }}</strong>
+                            </span>
+                        </div>
+
+                        <!-- 联动主区域 -->
+                        <div class="flex-grow grid grid-cols-2 gap-4 h-full overflow-hidden">
+                            <!-- 输入载荷 -->
+                            <div class="flex flex-col bg-slate-950/80 border border-slate-800 rounded-xl p-3 overflow-hidden">
+                                <span class="text-[10px] text-slate-500 mb-1 font-semibold uppercase tracking-wider">Input Payload</span>
+                                <pre class="text-[10px] text-slate-300 overflow-auto font-mono flex-grow select-all">{{ formatJSON(selectedSpan?.input_data) }}</pre>
+                            </div>
+                            <!-- 输出载荷 -->
+                            <div class="flex flex-col bg-slate-950/80 border border-slate-800 rounded-xl p-3 overflow-hidden">
+                                <span class="text-[10px] text-slate-500 mb-1 font-semibold uppercase tracking-wider">Output Payload</span>
+                                <pre class="text-[10px] text-slate-300 overflow-auto font-mono flex-grow select-all">{{ formatJSON(selectedSpan?.output_data) }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 📃 问题明细与日志审计 -->
+        <section class="glass-card rounded-2xl p-5">
+            <h3 class="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                <i data-lucide="file-text" class="w-4 h-4 text-emerald-500"></i>
+                最终文本审计与会话输出 (Trace IO Summary)
+            </h3>
+            <div v-if="selectedTraceId && currentTraceDetail.trace" class="space-y-4">
+                <div class="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl">
+                    <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">用户提问 (User Query)</span>
+                    <p class="text-sm text-slate-200 mt-1.5 font-medium leading-relaxed">
+                        {{ currentTraceDetail.trace.user_query }}
+                    </p>
+                </div>
+                <div class="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl">
+                    <span class="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">系统响应 (Final Response)</span>
+                    <p class="text-sm text-slate-200 mt-1.5 leading-relaxed whitespace-pre-line font-mono">
+                        {{ currentTraceDetail.trace.final_response || '尚无系统返回响应。' }}
+                    </p>
+                </div>
+            </div>
+            <div v-else class="text-center py-6 text-xs text-slate-500">
+                请在上方选择一条 Trace 记录以显示最终的文本审计数据
+            </div>
+        </section>
+
+    </div>
+
+    <!-- 逻辑脚本 -->
+    <script>
+        const { createApp, ref, computed, onMounted, onBeforeUnmount, watch } = Vue;
+
+        createApp({
+            setup() {
+                // 状态变量
+                const stats = ref({
+                    total_runs: 0,
+                    success_rate: 0.0,
+                    total_tokens: 0,
+                    avg_latency: 0.0,
+                    avg_faithfulness: 0.0,
+                    avg_answer_relevancy: 0.0
+                });
+                const traces = ref([]);
+                const selectedTraceId = ref(null);
+                const currentTraceDetail = ref({
+                    trace: null,
+                    spans: [],
+                    evals: []
+                });
+                const selectedSpan = ref(null);
+                
+                const searchQuery = ref('');
+                const loading = ref(false);
+                const statsLoading = ref(false);
+                
+                // 实时更新监听
+                const isAutoRefresh = ref(true);
+                let refreshInterval = null;
+
+                // 接口基本 URL (使用相对路径以适应部署)
+                const BASE_URL = window.location.origin;
+
+                // 计算属性：过滤 Trace 列表
+                const filteredTraces = computed(() => {
+                    if (!searchQuery.value) return traces.value;
+                    const query = searchQuery.value.toLowerCase();
+                    return traces.value.filter(t => 
+                        t.user_query.toLowerCase().includes(query) || 
+                        t.trace_id.toLowerCase().includes(query)
+                    );
+                });
+
+                // 获取基础指标
+                const fetchStats = async () => {
+                    statsLoading.value = true;
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/stats`);
+                        if (res.ok) {
+                            stats.value = await res.json();
+                        }
+                    } catch (e) {
+                        console.error("加载全局统计出错：", e);
+                    } finally {
+                        statsLoading.value = false;
+                    }
+                };
+
+                // 获取 Trace 列表
+                const fetchTraces = async (isSilent = false) => {
+                    if (!isSilent) loading.value = true;
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/traces`);
+                        if (res.ok) {
+                            const newTraces = await res.json();
+                            traces.value = newTraces;
+                            
+                            // 默认选择第一条（如果有的话且当前未选择）
+                            if (newTraces.length > 0 && !selectedTraceId.value) {
+                                selectTrace(newTraces[0].trace_id);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("加载 Trace 列表出错：", e);
+                    } finally {
+                        if (!isSilent) loading.value = false;
+                    }
+                };
+
+                // 加载 Trace 详情
+                const fetchTraceDetail = async (traceId) => {
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/traces/${traceId}`);
+                        if (res.ok) {
+                            const detail = await res.json();
+                            currentTraceDetail.value = detail;
+                            
+                            // 默认聚焦在第一个 span
+                            if (detail.spans && detail.spans.length > 0) {
+                                selectedSpan.value = detail.spans[0];
+                            } else {
+                                selectedSpan.value = null;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("获取 Trace 详情出错：", e);
+                    }
+                };
+
+                // 选择一条 Trace
+                const selectTrace = (traceId) => {
+                    selectedTraceId.value = traceId;
+                    fetchTraceDetail(traceId);
+                };
+
+                // 选择一个 Span
+                const selectSpan = (span) => {
+                    selectedSpan.value = span;
+                };
+
+                // 全面拉取数据
+                const fetchData = async () => {
+                    loading.value = true;
+                    await Promise.all([fetchStats(), fetchTraces()]);
+                    updateChart();
+                    loading.value = false;
+                };
+
+                // 甘特图计算样式 (根据相对时间和宽度)
+                const getSpanGanttStyle = (span) => {
+                    if (!currentTraceDetail.value.trace) return {};
+                    const traceStartTime = currentTraceDetail.value.trace.timestamp;
+                    const traceLatency = currentTraceDetail.value.trace.latency || 1.0;
+                    
+                    const spanStart = span.start_time;
+                    const spanDuration = span.duration;
+
+                    // 计算相对 Trace 的开始百分比，防止超出 100%
+                    const relativeStart = Math.max(0, spanStart - traceStartTime);
+                    const leftPercent = Math.min(95, (relativeStart / traceLatency) * 100);
+                    const widthPercent = Math.max(5, Math.min(100 - leftPercent, (spanDuration / traceLatency) * 100));
+
+                    return {
+                        left: `${leftPercent}%`,
+                        width: `${widthPercent}%`
+                    };
+                };
+
+                // 辅助函数
+                const formatTime = (ts) => {
+                    if (!ts) return '';
+                    const date = new Date(ts * 1000);
+                    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                };
+
+                const formatNumber = (num) => {
+                    if (num === null || num === undefined) return 0;
+                    return num.toLocaleString();
+                };
+
+                const formatJSON = (data) => {
+                    if (!data) return 'None';
+                    if (typeof data === 'string') {
+                        try {
+                            return JSON.stringify(JSON.parse(data), null, 2);
+                        } catch (e) {
+                            return data;
+                        }
+                    }
+                    return JSON.stringify(data, null, 2);
+                };
+
+                // Chart.js 图表渲染
+                let trendChart = null;
+                const initChart = () => {
+                    const ctx = document.getElementById('ragasTrendChart').getContext('2d');
+                    trendChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: [],
+                            datasets: [
+                                {
+                                    label: '忠实度 (Faithfulness)',
+                                    borderColor: '#818cf8',
+                                    backgroundColor: 'rgba(129, 140, 248, 0.1)',
+                                    borderWidth: 2,
+                                    tension: 0.4,
+                                    data: [],
+                                    fill: true
+                                },
+                                {
+                                    label: '回答相关度 (Answer Relevancy)',
+                                    borderColor: '#ec4899',
+                                    backgroundColor: 'rgba(236, 72, 153, 0.1)',
+                                    borderWidth: 2,
+                                    tension: 0.4,
+                                    data: [],
+                                    fill: true
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    labels: { color: '#94a3b8', font: { size: 10 } }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                                    ticks: { color: '#64748b', font: { size: 9 } }
+                                },
+                                y: {
+                                    min: 0,
+                                    max: 1,
+                                    grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                                    ticks: { color: '#64748b', font: { size: 9 } }
+                                }
+                            }
+                        }
+                    });
+                };
+
+                const updateChart = () => {
+                    if (!trendChart) return;
+                    
+                    // 获取最近 10 条有分数的 traces 用于曲线走势
+                    const tracesWithScores = [...traces.value]
+                        .filter(t => t.faithfulness !== null || t.answer_relevancy !== null)
+                        .reverse() // 升序展示时间线
+                        .slice(-10);
+
+                    const labels = tracesWithScores.map(t => formatTime(t.timestamp));
+                    const faithfulnessData = tracesWithScores.map(t => t.faithfulness || 0.0);
+                    const relevancyData = tracesWithScores.map(t => t.answer_relevancy || 0.0);
+
+                    trendChart.data.labels = labels;
+                    trendChart.data.datasets[0].data = faithfulnessData;
+                    trendChart.data.datasets[1].data = relevancyData;
+                    trendChart.update();
+                };
+
+                // 设置自动轮询
+                const setupAutoRefresh = () => {
+                    if (isAutoRefresh.value) {
+                        refreshInterval = setInterval(async () => {
+                            await Promise.all([fetchStats(), fetchTraces(true)]);
+                            updateChart();
+                            // 如果有被选中的 trace 并且正在轮询，则静默更新详情
+                            if (selectedTraceId.value) {
+                                fetchTraceDetail(selectedTraceId.value);
+                            }
+                        }, 4000);
+                    } else {
+                        if (refreshInterval) {
+                            clearInterval(refreshInterval);
+                            refreshInterval = null;
+                        }
+                    }
+                };
+
+                watch(isAutoRefresh, () => {
+                    setupAutoRefresh();
+                });
+
+                // 生命周期钩子
+                onMounted(async () => {
+                    lucide.createIcons();
+                    initChart();
+                    await fetchData();
+                    setupAutoRefresh();
+                    
+                    // 挂载后重新触发一次 lucide 图标渲染以防 Vue 异步渲染漏掉
+                    setTimeout(() => {
+                        lucide.createIcons();
+                    }, 500);
+                });
+
+                onBeforeUnmount(() => {
+                    if (refreshInterval) {
+                        clearInterval(refreshInterval);
+                    }
+                });
+
+                return {
+                    stats,
+                    traces,
+                    selectedTraceId,
+                    currentTraceDetail,
+                    selectedSpan,
+                    searchQuery,
+                    loading,
+                    statsLoading,
+                    isAutoRefresh,
+                    filteredTraces,
+                    fetchData,
+                    selectTrace,
+                    selectSpan,
+                    getSpanGanttStyle,
+                    formatTime,
+                    formatNumber,
+                    formatJSON
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

@@ -7,7 +7,7 @@ from core.state_graph.state import SimPipelineState
 from core.state_graph.nodes.extractor_node import extractor_node
 from core.state_graph.nodes.coder_node import coder_node
 from core.state_graph.nodes.executor_node import executor_node
-from core.state_graph.routing import route_after_extractor, route_after_coder
+from core.state_graph.routing import route_after_extractor, route_after_coder, route_after_executor
 
 
 def build_sim_pipeline(tools=None):
@@ -33,15 +33,23 @@ def build_sim_pipeline(tools=None):
     # 1. 设置入口
     workflow.set_entry_point("Extractor")
 
-    # 2. 路由：Extractor -> Coder
+    # 2. 路由：Extractor 自纠与挂起
     workflow.add_conditional_edges("Extractor", route_after_extractor, {
-        "Retry": "Extractor",
         "Coder": "Coder",
-        "End": END
+        "Extractor": "Extractor",
+        "WaitHuman": END
     })
 
-    # 3. 线性执行
-    workflow.add_edge("Coder", "Executor")
-    workflow.add_edge("Executor", END)
+    # 3. 路由：Coder 代码自愈
+    workflow.add_conditional_edges("Coder", route_after_coder, {
+        "Retry": "Coder",
+        "Execute": "Executor"
+    })
+
+    # 4. 路由：Executor 报错折返自愈
+    workflow.add_conditional_edges("Executor", route_after_executor, {
+        "ReExtract": "Extractor",
+        "End": END
+    })
 
     return workflow.compile()

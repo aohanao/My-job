@@ -3,7 +3,8 @@ import pytest
 from core.state_graph.routing import (
     route_after_planner,
     route_after_extractor,
-    route_after_coder
+    route_after_coder,
+    route_after_executor
 )
 
 
@@ -13,70 +14,51 @@ class TestRouteAfterPlanner:
     def test_route_to_chat(self):
         """测试路由到Chat节点"""
         state = {"action_type": "chat"}
-        result = route_after_planner(state)
-        assert result == "Chat", "action_type为chat时应路由到Chat"
+        assert route_after_planner(state) == "Chat"
 
     def test_route_to_simulate(self):
         """测试路由到SimPipeline"""
         state = {"action_type": "simulate"}
-        result = route_after_planner(state)
-        assert result == "SimPipeline", "action_type为simulate时应路由到SimPipeline"
+        assert route_after_planner(state) == "SimPipeline"
 
     def test_route_to_end_on_error(self):
         """测试错误时路由到End"""
         state = {"action_type": "error"}
-        result = route_after_planner(state)
-        assert result == "End", "action_type为error时应路由到End"
-
-    def test_route_with_missing_action_type(self):
-        """测试缺失action_type时默认路由到SimPipeline"""
-        state = {}
-        result = route_after_planner(state)
-        assert result == "SimPipeline", "缺失action_type时应有默认行为"
-
-    def test_route_with_none_action_type(self):
-        """测试action_type为None"""
-        state = {"action_type": None}
-        result = route_after_planner(state)
-        assert result == "SimPipeline", "action_type为None时应路由到SimPipeline"
+        assert route_after_planner(state) == "End"
 
 
 class TestRouteAfterExtractor:
-    """测试Extractor之后的路由决策
+    """测试Extractor之后的路由决策"""
 
-    当前实现为全自动模式：route_after_extractor 始终返回 'Coder'，
-    不再根据 param_errors/retry_count 分叉。
-    """
-
-    def test_always_routes_to_coder(self):
-        """全自动模式：无论任何状态都路由到Coder"""
+    def test_routes_to_coder_when_no_errors(self):
+        """测试正常时路由到Coder"""
         state = {"param_errors": None, "retry_count": 0}
         result = route_after_extractor(state)
-        assert result == "Coder", "全自动模式应始终路由到Coder"
+        assert result == "Coder", "没有参数错误时应路由到Coder"
 
-    def test_routes_to_coder_with_param_errors(self):
-        """全自动模式：即使有参数错误也路由到Coder（错误由Extractor内部处理）"""
+    def test_routes_to_extractor_with_param_errors(self):
+        """测试有参数错误且未超限时重试"""
         state = {"param_errors": "错误：钢板厚度必须大于 0。", "retry_count": 1}
         result = route_after_extractor(state)
-        assert result == "Coder", "全自动模式下param_errors不影响路由"
+        assert result == "Extractor", "有参数错误且重试未超限应路由到Extractor"
 
     def test_routes_to_coder_with_high_retry_count(self):
-        """全自动模式：高重试次数也路由到Coder"""
-        state = {"param_errors": "错误：参数无效", "retry_count": 99}
+        """测试重试次数超限后强行路由到Coder"""
+        state = {"param_errors": "错误：参数无效", "retry_count": 3}
         result = route_after_extractor(state)
-        assert result == "Coder", "全自动模式下retry_count不影响路由"
+        assert result == "Coder", "重试次数超限后应路由到Coder"
 
     def test_routes_to_coder_with_empty_state(self):
-        """全自动模式：空状态也路由到Coder"""
+        """测试空状态默认路由到Coder"""
         state = {}
         result = route_after_extractor(state)
-        assert result == "Coder", "全自动模式下空状态应路由到Coder"
+        assert result == "Coder", "空状态应路由到Coder"
 
-    def test_routes_to_coder_with_hitl_interrupt(self):
-        """全自动模式：HITL_INTERRUPT标记也路由到Coder"""
-        state = {"param_errors": "HITL_INTERRUPT", "retry_count": 1}
+    def test_routes_to_waithuman_with_hit_interrupt(self):
+        """测试需要人工澄清时路由到WaitHuman"""
+        state = {"param_errors": "HIT_INTERRUPT", "retry_count": 1}
         result = route_after_extractor(state)
-        assert result == "Coder", "全自动模式下HITL_INTERRUPT不触发中断路由"
+        assert result == "WaitHuman", "HIT_INTERRUPT标记应路由到WaitHuman"
 
 
 class TestRouteAfterCoder:
@@ -107,6 +89,25 @@ class TestRouteAfterCoder:
         assert result == "Execute", "缺失code_errors时应路由到Execute"
 
 
+class TestRouteAfterExecutor:
+    """测试Executor之后的路由决策"""
+
+    def test_routes_to_end_on_success(self):
+        """测试无错误时路由到End"""
+        state = {"error_log": None, "retry_count": 0}
+        assert route_after_executor(state) == "End"
+
+    def test_routes_to_reextract_on_error(self):
+        """测试有执行错误时折返自愈"""
+        state = {"error_log": "求解中途发生崩溃", "retry_count": 1}
+        assert route_after_executor(state) == "ReExtract"
+
+    def test_routes_to_end_on_high_retry_error(self):
+        """测试有错误但重试超限时路由到End"""
+        state = {"error_log": "求解中途发生崩溃", "retry_count": 3}
+        assert route_after_executor(state) == "End"
+
+
 class TestRoutingIntegration:
     """测试路由逻辑的集成场景"""
 
@@ -130,8 +131,8 @@ class TestRoutingIntegration:
         state = {"action_type": "simulate"}
         assert route_after_planner(state) == "SimPipeline"
 
-        # Extractor -> Coder（全自动）
-        state = {"param_errors": "参数错误", "retry_count": 1}
+        # Extractor -> Coder
+        state = {"param_errors": None, "retry_count": 0}
         assert route_after_extractor(state) == "Coder"
 
         # Coder -> Retry（代码校验失败）

@@ -65,8 +65,9 @@ class TraceLogger:
         self.db_path = db_path
         init_db(db_path)
         
-    def start_trace(self, session_id: str, user_query: str) -> str:
-        trace_id = str(uuid.uuid4())
+    def start_trace(self, session_id: str, user_query: str, trace_id: Optional[str] = None) -> str:
+        if not trace_id:
+            trace_id = str(uuid.uuid4())
         timestamp = time.time()
         conn = sqlite3.connect(self.db_path)
         conn.execute(
@@ -80,14 +81,23 @@ class TraceLogger:
     def log_span(self, trace_id: str, span_type: str, span_name: str, 
                  start_time: float, end_time: float, input_data: Any, output_data: Any, status: str = "SUCCESS", error_msg: str = ""):
         span_id = str(uuid.uuid4())
+        
+        # 防御双重序列化：如果是字符串类型，说明已经是序列化后的 JSON，直接存储
+        def get_clean_payload(payload):
+            if payload is None:
+                return "{}"
+            if isinstance(payload, str):
+                return payload
+            return json.dumps(payload, ensure_ascii=False)
+
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             """INSERT INTO trace_span 
             (span_id, trace_id, span_type, span_name, start_time, end_time, input_data, output_data, status, error_msg) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (span_id, trace_id, span_type, span_name, start_time, end_time, 
-             json.dumps(input_data, ensure_ascii=False) if input_data else "{}",
-             json.dumps(output_data, ensure_ascii=False) if output_data else "{}",
+             get_clean_payload(input_data),
+             get_clean_payload(output_data),
              status, error_msg)
         )
         conn.commit()

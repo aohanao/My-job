@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAE 智能体仿真座舱</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            bg: '#030712',
+                            card: '#0f172a',
+                            border: '#1e293b',
+                            primary: '#00d1ff',
+                            secondary: '#6366f1',
+                            success: '#10b981',
+                            error: '#ef4444',
+                            warning: '#f59e0b',
+                            terminal: '#22c55e'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        /* 🌌 赛博暗调科技背景 */
+        body {
+            background-color: #030712;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(0, 209, 255, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.08) 0px, transparent 50%),
+                linear-gradient(rgba(255, 255, 255, 0.003) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.003) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 100% 100%, 25px 25px, 25px 25px;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #f8fafc;
+            overflow: hidden;
+        }
+
+        /* 🪟 毛玻璃拟态卡片 */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.5);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 发光效果 */
+        .neon-border-cyan:focus {
+            outline: none;
+            border-color: rgba(0, 209, 255, 0.5);
+            box-shadow: 0 0 15px rgba(0, 209, 255, 0.25);
+        }
+        .neon-shadow-indigo {
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+        }
+
+        /* 状态呼吸灯 */
+        @keyframes status-pulse-green {
+            0%, 100% { opacity: 0.7; box-shadow: 0 0 4px rgba(16, 185, 129, 0.6); }
+            50% { opacity: 1; box-shadow: 0 0 12px rgba(16, 185, 129, 1); }
+        }
+        .pulse-green {
+            animation: status-pulse-green 1.8s infinite;
+        }
+
+        @keyframes status-pulse-red {
+            0%, 100% { opacity: 0.7; box-shadow: 0 0 4px rgba(239, 68, 68, 0.6); }
+            50% { opacity: 1; box-shadow: 0 0 12px rgba(239, 68, 68, 1); }
+        }
+        .pulse-red {
+            animation: status-pulse-red 1.8s infinite;
+        }
+
+        /* 终端滚动条 */
+        .term-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .term-scroll::-webkit-scrollbar-thumb {
+            background: rgba(34, 197, 94, 0.3);
+            border-radius: 2px;
+        }
+        .term-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(34, 197, 94, 0.6);
+        }
+
+        /* 跑马灯跑流 */
+        @keyframes border-flow {
+            0% { border-color: rgba(0, 209, 255, 0.4); }
+            50% { border-color: rgba(99, 102, 241, 0.4); }
+            100% { border-color: rgba(0, 209, 255, 0.4); }
+        }
+        .flowing-border {
+            animation: border-flow 4s infinite linear;
+        }
+        
+        [v-cloak] {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen p-4 flex flex-col overflow-hidden">
+    <div id="app" v-cloak class="flex-grow flex flex-col max-w-7xl w-full mx-auto space-y-4 h-full">
+        
+        <!-- 📡 顶部导航与状态栏 -->
+        <header class="glass-panel rounded-2xl p-4 flex justify-between items-center flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                    <i data-lucide="cpu" class="w-6 h-6 text-white animate-pulse"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent flex items-center gap-2">
+                        CAE 增强智能体控制座舱
+                    </h1>
+                    <p class="text-[10px] text-slate-400">基于多智能体决策机制与 Abaqus 物理仿真引擎</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4 text-xs">
+                <!-- 会话重置 -->
+                <button @click="resetSession" class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    <span>重置会话</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 🚀 主舱室区 (双栏布局) -->
+        <div class="flex-grow flex flex-col md:flex-row gap-4 overflow-hidden min-h-0">
+            
+            <!-- 📐 左栏：仿真参数配置与意图提取舱 (1/3 宽度) -->
+            <aside class="md:w-1/3 flex flex-col gap-4 overflow-hidden h-full flex-shrink-0">
+                <!-- 1. 会话映射与 RAG 状态 -->
+                <div class="glass-panel rounded-2xl p-4 space-y-3 flex-shrink-0">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <i data-lucide="settings" class="w-4 h-4 text-cyan-400"></i>
+                        会话参数映射
+                    </h3>
+                    <div class="flex items-center gap-2">
+                        <input type="text" v-model="threadId" @change="onThreadIdChange" placeholder="会话 ID (Thread ID)..." class="flex-grow bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition font-mono">
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3 pt-1">
+                        <!-- 知识库在线状态 -->
+                        <div class="bg-slate-950/40 border border-slate-900 rounded-xl p-2.5 flex items-center justify-between">
+                            <span class="text-[10px] text-slate-400 font-semibold">RAG 知识库</span>
+                            <div class="flex items-center gap-1.5">
+                                <span :class="['w-2 h-2 rounded-full', mcpStatus.mcp_connected ? 'bg-emerald-500 pulse-green' : 'bg-red-500 pulse-red']"></span>
+                                <span class="text-[10px] font-bold text-slate-300">{{ mcpStatus.mcp_connected ? '在线' : '离线' }}</span>
+                            </div>
+                        </div>
+                        <!-- WebSocket 连接状态 -->
+                        <div class="bg-slate-950/40 border border-slate-900 rounded-xl p-2.5 flex items-center justify-between">
+                            <span class="text-[10px] text-slate-400 font-semibold">座舱通信</span>
+                            <div class="flex items-center gap-1.5">
+                                <span :class="['w-2 h-2 rounded-full', wsConnected ? 'bg-emerald-500 pulse-green' : 'bg-red-500 pulse-red']"></span>
+                                <span class="text-[10px] font-bold text-slate-300">{{ wsConnected ? '连接正常' : '重连中' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 意图决策引擎 -->
+                <div class="glass-panel rounded-2xl p-4 flex-shrink-0 space-y-3">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <i data-lucide="zap" class="w-4 h-4 text-indigo-400"></i>
+                        意图决策引擎 (Intent Engine)
+                    </h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/60">
+                            <div class="text-[9px] text-slate-500 font-bold uppercase tracking-wider">当前技能方向</div>
+                            <div class="text-xs text-cyan-400 font-extrabold mt-1">{{ runtimeState.intent }}</div>
+                        </div>
+                        <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/60">
+                            <div class="text-[9px] text-slate-500 font-bold uppercase tracking-wider">执行驱动模式</div>
+                            <div class="text-xs text-indigo-400 font-extrabold mt-1">{{ runtimeState.action_type }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 物理参数实时看板 -->
+                <div class="glass-panel rounded-2xl p-4 flex-grow flex flex-col min-h-0">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-3 flex-shrink-0">
+                        <i data-lucide="sliders" class="w-4 h-4 text-emerald-400"></i>
+                        物理参数实时提取看板
+                    </h3>
+                    
+                    <div class="flex-grow overflow-y-auto space-y-3 pr-1 min-h-0">
+                        <div v-if="Object.keys(runtimeState.params).length === 0" class="flex flex-col items-center justify-center h-full text-slate-500 text-xs py-8">
+                            <i data-lucide="info" class="w-6 h-6 mb-1 text-slate-600"></i>
+                            系统正在监听并提取关键物理参数
+                        </div>
+                        
+                        <div v-else v-for="(val, key) in runtimeState.params" :key="key" class="bg-slate-950/60 border border-slate-900 rounded-xl p-3 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-slate-300 flex items-center gap-1">
+                                    <span>{{ getParamIcon(key) }}</span>
+                                    <span>{{ key }}</span>
+                                </span>
+                                <span class="text-[9px] bg-slate-900 text-slate-500 px-1.5 py-0.2 rounded uppercase">Group</span>
+                            </div>
+                            
+                            <!-- 子参数展示 -->
+                            <div v-if="typeof val === 'object'" class="grid grid-cols-2 gap-2">
+                                <div v-for="(subVal, subKey) in val" :key="subKey" class="bg-slate-900/40 p-2 rounded-lg border border-slate-800/40">
+                                    <div class="text-[9px] text-slate-500 font-medium truncate" :title="subKey">{{ subKey }}</div>
+                                    <div class="text-xs text-white font-mono font-bold mt-0.5 truncate">{{ subVal }}</div>
+                                </div>
+                            </div>
+                            <div v-else class="bg-slate-900/40 p-2 rounded-lg border border-slate-800/40">
+                                <div class="text-xs text-white font-mono font-bold">{{ val }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 💬 右栏：智能体聊天与求解审计控制舱 (2/3 宽度) -->
+            <main class="flex-grow md:w-2/3 flex flex-col glass-panel rounded-2xl overflow-hidden h-full flowing-border border">
+                
+                <!-- 运行态指示器 -->
+                <div class="bg-slate-950/80 border-b border-slate-900 px-4 py-2 flex items-center justify-between text-xs flex-shrink-0" v-if="runningNode">
+                    <span class="flex items-center gap-1.5 text-cyan-400 font-semibold">
+                        <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i>
+                        ⚡ 引擎流式推演中...
+                    </span>
+                    <span class="font-mono text-[10px] bg-indigo-950/50 text-indigo-400 border border-indigo-900 px-2 py-0.5 rounded">
+                        NODE: {{ runningNode }}
+                    </span>
+                </div>
+
+                <!-- 对话信息气泡区域 -->
+                <div id="chatBox" class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6 min-h-0">
+                    <div v-if="chatHistory.length === 0" class="flex flex-col items-center justify-center h-full text-slate-500 text-xs py-12">
+                        <div class="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mb-3">
+                            <i data-lucide="message-square" class="w-6 h-6 text-slate-600"></i>
+                        </div>
+                        <p class="font-semibold text-slate-400">CAE 增强智能体已就绪</p>
+                        <p class="text-slate-500 mt-1">请输入工程描述或仿真控制指令（例如进行隧道参数化分析）</p>
+                    </div>
+
+                    <div v-for="(msg, idx) in chatHistory" :key="idx" 
+                         :class="['flex gap-3 max-w-[85%]', msg.role === 'user' ? 'ml-auto flex-row-reverse' : '']">
+                        
+                        <!-- 头像/图标 -->
+                        <div :class="['w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white shadow-md', 
+                                      msg.role === 'user' ? 'bg-gradient-to-tr from-cyan-500 to-indigo-500' : 'bg-slate-800 border border-slate-700']">
+                            <i :data-lucide="msg.role === 'user' ? 'user' : 'bot'" class="w-4 h-4"></i>
+                        </div>
+
+                        <!-- 气泡内容 -->
+                        <div class="space-y-2">
+                            <div :class="['rounded-2xl p-4 text-sm leading-relaxed shadow-sm', 
+                                          msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-900/60 border border-slate-800/80 text-slate-200 rounded-tl-none']">
+                                <p class="whitespace-pre-wrap">{{ msg.content }}</p>
+                            </div>
+
+                            <!-- 🛠️ CAE 仿真求解黑客终端 -->
+                            <div v-if="msg.has_log && msg.log_content" class="w-full max-w-2xl bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl mt-2">
+                                <div class="bg-slate-900 px-3 py-1.5 flex justify-between items-center text-[10px] text-slate-400 border-b border-slate-800">
+                                    <span class="flex items-center gap-1.5 font-bold font-mono">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-green"></span>
+                                        TERMINAL: Abaqus Solver Logs
+                                    </span>
+                                    <button @click="copyLogs(msg.log_content)" class="hover:text-white transition flex items-center gap-0.5">
+                                        <i data-lucide="copy" class="w-3 h-3"></i>
+                                        <span>复制日志</span>
+                                    </button>
+                                </div>
+                                <div class="p-3 font-mono text-[10px] text-emerald-400 h-44 overflow-y-auto term-scroll bg-black/60 select-all leading-normal">
+                                    <pre class="whitespace-pre">{{ msg.log_content }}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 💬 底部输入区域 -->
+                <div class="p-4 border-t border-slate-900 bg-slate-950/60 flex-shrink-0">
+                    <form @submit.prevent="sendMessage" class="flex gap-2 relative">
+                        <input type="text" v-model="inputText" :disabled="isThinking" placeholder="输入工程物理模型描述，启动多智能体仿真..." class="flex-grow bg-slate-900/80 border border-slate-800 text-xs rounded-xl py-3 pl-4 pr-12 text-slate-200 neon-border-cyan placeholder-slate-500 disabled:opacity-50 transition">
+                        <button type="submit" :disabled="isThinking || !inputText" class="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-cyan-600 hover:bg-cyan-500 active:scale-95 text-xs text-white rounded-lg shadow-md disabled:opacity-50 transition flex items-center justify-center">
+                            <i data-lucide="send" class="w-4 h-4" v-if="!isThinking"></i>
+                            <i data-lucide="loader-2" class="w-4 h-4 animate-spin" v-else></i>
+                        </button>
+                    </form>
+                </div>
+            </main>
+        </div>
+
+    </div>
+
+    <!-- 逻辑脚本 -->
+    <script>
+        const { createApp, ref, onMounted, nextTick, watch, onBeforeUnmount } = Vue;
+
+        createApp({
+            setup() {
+                const threadId = ref('default-session');
+                const mcpStatus = ref({ mcp_connected: false, mcp_error: "" });
+                const wsConnected = ref(false);
+                const isThinking = ref(false);
+                const runningNode = ref(null);
+                const inputText = ref('');
+                const chatHistory = ref([]);
+                const runtimeState = ref({
+                    params: {},
+                    intent: '待捕获',
+                    action_type: '休息中',
+                    last_script_path: ''
+                });
+
+                let ws = null;
+                const BASE_URL = window.location.origin;
+
+                // 建立 WebSocket 连接
+                const connectWebSocket = () => {
+                    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProto}//${window.location.host}/ws/chat`;
+                    
+                    ws = new WebSocket(wsUrl);
+                    
+                    ws.onopen = () => {
+                        wsConnected.value = true;
+                        console.log('[WS] WebSocket Connected');
+                    };
+                    
+                    ws.onclose = () => {
+                        wsConnected.value = false;
+                        console.log('[WS] WebSocket Disconnected, reconnecting...');
+                        setTimeout(connectWebSocket, 3000);
+                    };
+                    
+                    ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        handleWebSocketMessage(data);
+                    };
+                };
+
+                // 处理 WebSocket 推送数据
+                const handleWebSocketMessage = (data) => {
+                    switch (data.type) {
+                        case 'start':
+                            isThinking.value = true;
+                            runningNode.value = 'Start';
+                            break;
+                        case 'status':
+                            runningNode.value = data.node;
+                            break;
+                        case 'message':
+                            appendMessageChunk(data.content);
+                            break;
+                        case 'consensus_params':
+                            runtimeState.value.params = data.params;
+                            break;
+                        case 'state_update':
+                            runtimeState.value.params = data.params || {};
+                            runtimeState.value.intent = data.intent || '待捕获';
+                            runtimeState.value.action_type = data.action_type || '休息中';
+                            runtimeState.value.last_script_path = data.last_script_path || '';
+                            
+                            // 更新最后一条助手消息的日志详情
+                            if (chatHistory.value.length > 0) {
+                                const lastMsg = chatHistory.value[chatHistory.value.length - 1];
+                                if (lastMsg.role === 'assistant') {
+                                    lastMsg.has_log = data.has_log;
+                                    lastMsg.log_content = data.log_content;
+                                    nextTick(() => {
+                                        reCreateIcons();
+                                        scrollToBottom();
+                                    });
+                                }
+                            }
+                            break;
+                        case 'done':
+                            isThinking.value = false;
+                            runningNode.value = null;
+                            scrollToBottom();
+                            break;
+                        case 'error':
+                            isThinking.value = false;
+                            runningNode.value = null;
+                            alert(`推演引擎报错: ${data.content}`);
+                            break;
+                    }
+                };
+
+                // 向最近一条 assistant 消息追加流式文本
+                const appendMessageChunk = (content) => {
+                    if (chatHistory.value.length === 0 || chatHistory.value[chatHistory.value.length - 1].role !== 'assistant') {
+                        chatHistory.value.push({
+                            role: 'assistant',
+                            content: content,
+                            has_log: false,
+                            log_content: ''
+                        });
+                    } else {
+                        chatHistory.value[chatHistory.value.length - 1].content = content;
+                    }
+                    nextTick(() => {
+                        reCreateIcons();
+                        scrollToBottom();
+                    });
+                };
+
+                // 发送消息
+                const sendMessage = () => {
+                    if (!inputText.value || isThinking.value) return;
+                    
+                    const msgText = inputText.value;
+                    inputText.value = '';
+                    
+                    // 先在聊天区插入用户消息
+                    chatHistory.value.push({
+                        role: 'user',
+                        content: msgText
+                    });
+                    
+                    nextTick(() => {
+                        reCreateIcons();
+                        scrollToBottom();
+                    });
+                    
+                    // WebSocket 发送
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            action: 'chat',
+                            session_id: threadId.value,
+                            message: msgText
+                        }));
+                    } else {
+                        alert('座舱通信异常，正在重新连接后端，请稍后重试');
+                    }
+                };
+
+                // 会话 ID 切换读取历史
+                const loadHistory = async () => {
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/history?session_id=${threadId.value}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            chatHistory.value = data.messages || [];
+                            runtimeState.value.params = data.consensus_params || {};
+                            runtimeState.value.intent = data.current_intent || '待捕获';
+                            runtimeState.value.action_type = data.action_type || '休息中';
+                            runtimeState.value.last_script_path = data.last_script_path || '';
+                            
+                            nextTick(() => {
+                                reCreateIcons();
+                                scrollToBottom();
+                            });
+                        }
+                    } catch (e) {
+                        console.error('加载历史记录错误:', e);
+                    }
+                };
+
+                const onThreadIdChange = () => {
+                    loadHistory();
+                };
+
+                // 重置会话内存
+                const resetSession = async () => {
+                    if (confirm('确认重置当前智能体仿真会话的全部记忆？')) {
+                        try {
+                            const res = await fetch(`${BASE_URL}/api/reset`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ session_id: threadId.value })
+                            });
+                            if (res.ok) {
+                                chatHistory.value = [];
+                                runtimeState.value.params = {};
+                                runtimeState.value.intent = '待捕获';
+                                runtimeState.value.action_type = '休息中';
+                                runtimeState.value.last_script_path = '';
+                                alert('仿真会话重置成功！');
+                                nextTick(() => {
+                                    reCreateIcons();
+                                    scrollToBottom();
+                                });
+                            }
+                        } catch (e) {
+                            console.error('重置会话错误:', e);
+                        }
+                    }
+                };
+
+                // 获取 RAG 知识库离线状态
+                const checkMcpStatus = async () => {
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/mcp_status`);
+                        if (res.ok) {
+                            mcpStatus.value = await res.json();
+                        }
+                    } catch (e) {
+                        console.error('检查 MCP 状态出错:', e);
+                    }
+                };
+
+                // 辅助函数
+                const getParamIcon = (groupName) => {
+                    const iconMap = {
+                        'geometry': '📐',
+                        'material': '🧱',
+                        'physics': '⚡',
+                        'mesh': '🕸️',
+                        'tunnel': '🚇',
+                        'soil': '🕳️',
+                        'fluid': '🌊'
+                    };
+                    return iconMap[groupName.toLowerCase()] || '🔹';
+                };
+
+                const copyLogs = (content) => {
+                    navigator.clipboard.writeText(content).then(() => {
+                        alert('求解日志已成功复制到剪贴板！');
+                    });
+                };
+
+                const scrollToBottom = () => {
+                    const chatBox = document.getElementById('chatBox');
+                    if (chatBox) {
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                };
+
+                const reCreateIcons = () => {
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                };
+
+                onMounted(() => {
+                    reCreateIcons();
+                    checkMcpStatus();
+                    connectWebSocket();
+                    loadHistory();
+                    
+                    // 每 10 秒校验一次 MCP 状态
+                    setInterval(checkMcpStatus, 10000);
+                    
+                    setTimeout(() => {
+                        reCreateIcons();
+                    }, 500);
+                });
+
+                return {
+                    threadId,
+                    mcpStatus,
+                    wsConnected,
+                    isThinking,
+                    runningNode,
+                    inputText,
+                    chatHistory,
+                    runtimeState,
+                    sendMessage,
+                    onThreadIdChange,
+                    resetSession,
+                    getParamIcon,
+                    copyLogs
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

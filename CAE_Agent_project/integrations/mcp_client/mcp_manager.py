@@ -1,23 +1,54 @@
-# mcp_manager.py
 import asyncio
 import os
 from contextlib import AsyncExitStack
+import mcp
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from langchain_core.tools import StructuredTool
+from mcp.client.stdio import stdio_client, get_default_environment, StdioServerParameters as ServerParameters
+from pydantic import create_model, Field, BaseModel
 
-class RAGConnectionManager:
-    """
-    单例模式：维护与 RAG MCP Server (HTTP SSE) 的全局长连接。
-    """
-    _instance = None
+def json_schema_to_pydantic(model_name: str, schema: dict):
+    """将 JSON Schema 字典动态转换为 Pydantic BaseModel"""
+    if not schema or schema.get("type") != "object":
+        return None
+        
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+    
+    fields = {}
+    for field_name, field_info in properties.items():
+        field_type = str
+        schema_type = field_info.get("type")
+        if schema_type == "integer":
+            field_type = int
+        elif schema_type == "number":
+            field_type = float
+        elif schema_type == "boolean":
+            field_type = bool
+        elif schema_type == "array":
+            field_type = list
+        elif schema_type == "object":
+            field_type = dict
+            
+        desc = field_info.get("description", "")
+        default_val = field_info.get("default")
+        
+        if field_name in required and default_val is None:
+            fields[field_name] = (field_type, Field(..., description=desc))
+        else:
+            fields[field_name] = (field_type, Field(default=default_val, description=desc))
+            
+    return create_model(model_name, **fields)
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._session = None
-            cls._instance._exit_stack = None
-        return cls._instance
+
+class MCPConnectionManager:
+    """
+    MCP Server 连接管理器。
+    支持与多个 MCP Server 建立独立连接。
+    """
+    def __init__(self):
+        self._session = None
+        self._exit_stack = None
 
     async def connect(self, sse_url: str = "http://127.0.0.1:8000/sse"):
         if self._session is not None:
@@ -36,7 +67,7 @@ class RAGConnectionManager:
             self._session = None
             raise e
 
-    async def get_all_rag_tools(self) -> list[StructuredTool]:
+    async def get_tools(self) -> list[StructuredTool]:
         if not self._session:
             raise RuntimeError("MCP 会话未建立")
         
@@ -66,12 +97,18 @@ class RAGConnectionManager:
                         return f"工具调用内部错误: {str(e)}"
                 return async_caller
 
+            schema_model = None
+            if hasattr(t, "inputSchema") and t.inputSchema:
+                try:
+                    schema_model = json_schema_to_pydantic(f"{t.name}Schema", t.inputSchema)
+                except Exception as se:
+                    print(f"[MCP] ⚠️ 动态为工具 {t.name} 解析 Schema 失败: {se}")
+
             lc_tool = StructuredTool.from_function(
                 coroutine=create_async_caller(t.name),
                 name=t.name,
                 description=t.description,
-                # 提示：这里如果能从 t.inputSchema 动态构建 Pydantic 模型会更好
-                # 目前先通过解包逻辑兼容
+                args_schema=schema_model,
             )
             langchain_tools.append(lc_tool)
         return langchain_tools
@@ -81,3 +118,35 @@ class RAGConnectionManager:
             await self._exit_stack.aclose()
             self._session = None
             self._exit_stack = None
+
+
+class StdioConnectionManager(MCPConnectionManager):
+    """
+    通过 stdio (命令行流) 启动并连接到本地或互联网上的 MCP Server (比如 npx 或 python 命令)
+    """
+    async def connect(self, command: str, args: list[str], env: dict = None):
+        if self._session is not None:
+            return
+
+        self._exit_stack = AsyncExitStack()
+        try:
+            # 合并默认环境变量，防止找不到命令
+            server_env = get_default_environment()
+            if env:
+                server_env.update(env)
+                
+            server_parameters = ServerParameters(
+                command=command,
+                args=args,
+                env=server_env
+            )
+            streams = await self._exit_stack.enter_async_context(stdio_client(server_parameters))
+            read_stream, write_stream = streams
+            self._session = await self._exit_stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
+            await self._session.initialize()
+        except Exception as e:
+            await self._exit_stack.aclose()
+            self._session = None
+            raise e

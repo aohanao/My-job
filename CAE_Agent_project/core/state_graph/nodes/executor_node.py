@@ -76,9 +76,14 @@ def executor_node(state: SimPipelineState):
         success_msg = f"✅ 物理机 CAE 计算已完美收官！\n- 脚本名称: `{script_name}`\n- 宿主机回传状态: {result_data.get('message')}"
         print(f"[Executor] {success_msg}")
         
+        from langchain_core.messages import HumanMessage
+        messages = state.get("messages", [])
+        human_msgs = [m.content for m in messages if isinstance(m, HumanMessage)]
+        user_query = human_msgs[0] if human_msgs else ""
+        
         exp_manager = get_experience_manager()
         exp_manager.engrave_success(
-            user_query=state.get("user_query", ""), 
+            user_query=user_query, 
             skill=state.get("selected_skill", ""),
             consensus_params=state.get("consensus_params", {}),
             script_name=script_name

@@ -154,13 +154,13 @@ class TestValidatorEdgeCases:
         }
         # 验证器应该能处理缺失字段（使用默认值或返回错误）
         errors = validate(params)
-        # 不应该抛出异常
+        assert isinstance(errors, list), "返回结果必须是列表"
 
     def test_empty_params(self):
         """测试空参数"""
         from skills.bullet_impact.validator import validate
         errors = validate({})
-        # 不应该抛出异常
+        assert isinstance(errors, list), "空参数应正常返回列表不抛异常"
 
     def test_none_values(self):
         """测试None值"""

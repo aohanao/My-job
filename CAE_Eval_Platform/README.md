@@ -11,11 +11,13 @@ CAE_Eval_Platform/
 ├── .env                  # 环境变量配置（API Key、模型型号）
 ├── eval_config.py        # 全局配置中心（读取 .env，统一管理路径与模型）
 ├── db_models.py          # 数据库模型层（表结构定义 + 探针 SDK）
-├── api_server.py         # FastAPI 数据采集服务（接收 Agent 上报的 Trace/Span）
+├── api_server.py         # FastAPI 采集服务 + 静态资源服务器 (运行在 8001 端口)
+├── static/
+│   └── index.html        # 🆕 新版极客霓虹暗黑科技大盘页面 (HTML+CSS+Vue.js+Chart.js)
 ├── eval_sdk.py           # 🆕 通用零侵入回调探针（LangChain Callback，即插即用）
 ├── evaluator.py          # LLM-as-a-Judge 意图/工具评估引擎
 ├── ragas_evaluator.py    # RAGAS 框架 RAG 质量评估引擎
-├── dashboard.py          # Streamlit 可视化监控大盘
+├── dashboard.py          # Streamlit 可视化监控大盘 (旧版/备用)
 ├── reset_eval.py         # 评估数据重置工具
 ├── requirements.txt      # Python 依赖清单
 ├── traces.db             # SQLite 运行时数据库（自动生成）
@@ -45,7 +47,7 @@ graph LR
     subgraph "3-在线审计 (Eval Platform)"
         G -- 请求轨迹 Trace --> H[(SQLite Traces DB)]
         H -- 实时扫描 --> I[RAGAS 在线审计]
-        I -- 监测看板仪表盘 --> J[Streamlit Dashboard]
+        I -- 监测看板仪表盘 --> J[FastAPI 极光霓虹大盘]
     end
 
     C -.->|指标一致性对齐| I
@@ -85,7 +87,7 @@ graph TD
     end
 
     %% 输出
-    BI_Dashboard --> Dashboard_UI(["Streamlit 极简仪表盘"])
+    BI_Dashboard --> Dashboard_UI(["FastAPI 极客暗黑科技大盘 (localhost:8001)"])
 
     %% 样式美化
     style Monitoring_Hub fill:#f8f9fa,stroke:#343a40,stroke-width:2px
@@ -498,11 +500,11 @@ EVAL_EMBEDDING_MODEL=text-embedding-v4
 ### 3. 启动服务
 
 ```bash
-# 1. 启动后端数据采集器（端口 8001）
+# 1. 启动数据采集服务兼新版极客大盘（端口 8001）
 python api_server.py
 
-# 2. 启动可视化监测大盘
-streamlit run dashboard.py
+# 2. 浏览器访问新版极客大盘
+http://localhost:8001
 
 # 3. 手动触发 LLM-as-a-Judge 意图评估
 python evaluator.py
@@ -512,6 +514,9 @@ python ragas_evaluator.py
 
 # 5. （可选）重置评估数据以重新评测
 python reset_eval.py
+
+# 6. （可选，旧版大盘备用）启动 Streamlit 可视化监测大盘
+streamlit run dashboard.py
 ```
 
 ### 4. 查看开发报告

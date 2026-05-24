@@ -120,44 +120,25 @@ class EvalPlatformCallback(BaseCallbackHandler):
         # { run_id: {"name": ..., "type": ..., "start_time": ..., "input_data": ...} }
         self._span_meta: Dict[UUID, dict] = {}
 
-        # ---- 队列与后台线程初始化 ----
-        import queue
-        import threading
-        self._queue = queue.Queue()
-        self._stop_event = threading.Event()
-        self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
-        self._worker_thread.start()
-
-    def _worker_loop(self):
-        """后台线程：串行执行 HTTP POST 请求，不阻塞主流程"""
-        client = httpx.Client(timeout=self.timeout)
-        while not self._stop_event.is_set() or not self._queue.empty():
-            try:
-                # 设定超时以定期响应 stop_event
-                import queue as q_mod
-                item = self._queue.get(timeout=0.2)
-            except q_mod.Empty:
-                continue
-
-            endpoint, payload = item
-            try:
-                resp = client.post(f"{self.server_url}{endpoint}", json=payload)
-                resp.raise_for_status()
-            except Exception as e:
-                logger.warning(f"[EvalSDK] 后台数据上报失败 {endpoint}: {e}")
-            finally:
-                self._queue.task_done()
-        try:
-            client.close()
-        except Exception:
-            pass
+        # ---- HTTP 客户端 ----
+        self._client = httpx.Client(timeout=timeout)
 
     # ===========================
     # 内部 HTTP 上报
     # ===========================
-    def _post(self, endpoint: str, payload: dict) -> None:
-        """非阻塞：将请求写入队列由后台线程处理"""
-        self._queue.put((endpoint, payload))
+    def _post(self, endpoint: str, payload: dict) -> Optional[dict]:
+        """静默 HTTP POST，失败时不影响 Agent 主流程"""
+        try:
+            resp = self._client.post(
+                f"{self.server_url}{endpoint}", json=payload
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            if not self.silent:
+                raise
+            logger.warning(f"[EvalSDK] 上报失败 {endpoint}: {e}")
+            return None
 
     def _report_span(
         self,
@@ -205,13 +186,12 @@ class EvalPlatformCallback(BaseCallbackHandler):
         if parent_run_id is None and self._trace_id is None:
             self._root_run_id = run_id
             user_query = self._extract_user_query(inputs)
-            import uuid
-            self._trace_id = str(uuid.uuid4())
-            self._post("/traces/start", {
+            result = self._post("/traces/start", {
                 "session_id": self.session_id,
                 "user_query": user_query,
-                "trace_id": self._trace_id,
             })
+            if result:
+                self._trace_id = result.get("trace_id")
 
         # 暂存 Span 元数据（顶层 Chain 也记录，但最终只有子节点上报）
         self._span_meta[run_id] = {
@@ -432,9 +412,8 @@ class EvalPlatformCallback(BaseCallbackHandler):
         self._span_meta.clear()
 
     def __del__(self):
-        """析构时通知后台线程退出"""
+        """析构时关闭 HTTP 客户端"""
         try:
-            self._stop_event.set()
-            self._worker_thread.join(timeout=2.0)
+            self._client.close()
         except Exception:
             pass

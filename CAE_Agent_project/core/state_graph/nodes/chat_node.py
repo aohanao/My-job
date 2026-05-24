@@ -5,7 +5,6 @@ from integrations.mcp_client.provider import get_material_lookup_tool
 from core.state_graph.state import CAEAgentState
 from core.state_graph.node_utils import get_memory_window, create_llm, merge_tools
 from core import config
-from core.tracer import tracer
 import json
 import time
 
@@ -33,42 +32,43 @@ SYSTEM_PROMPT_TEMPLATE = """你是一位专业的 CAE（计算机辅助工程）
 用户还没有发出"开始仿真"的指令，所以你不会直接启动仿真。
 
 【工具使用规范 — 这是最重要的规则】
-你有以下工具可用，请根据问题的性质自行选择最合适的工具：
+你有以下工具可用，必须严格按照适用场景选择，不得随意混用：
 
-1. lookup_local_material_db（本地参数速查表）：
-   - 适用场景：查询常见材料的基础力学参数（弹性模量、泊松比、密度、粘聚力等数值）
-   - 特点：速度快、精确，但内容有限，仅包含常见围岩等级、混凝土标号、钢筋型号
-   - 示例：「V级围岩弹性模量是多少」、「C30混凝土密度」
+■ 工程专业工具（CAE 相关）：
+  1. lookup_local_material_db：查询常见材料的基础力学参数（弹性模量、泊松比、密度等）
+     示例：「V级围岩弹性模量」、「C30混凝土密度」
+  2. lookup_cae_knowledge：查询工程规范、施工流程、设计标准等深层工程知识（RAG 知识库）
+     示例：「钻爆法隧道施工流程」、「新奥法支护设计规范」
+  3. record_consensus_params：用户确认了一个具体参数数值时，立即调用记录到共识池
 
-2. lookup_cae_knowledge（RAG 知识库深度检索）：
-   - 适用场景：查询工程规范、施工流程、设计标准、技术文档等深层工程知识
-   - 特点：内容丰富，基于用户上传的工程文档进行语义检索
-   - 示例：「钻爆法隧道施工流程」、「新奥法支护设计规范」、「围岩分级标准依据」
-   - 注意：只有当 MCP 知识库在线时此工具才可用
+■ 通用工具（与 CAE 无关）：
+  4. get_current_time：用户询问当前时间/日期时调用，其他情况不调用
+  5. simple_calculator：用户需要计算明确的数学表达式时调用
+  6. get_mock_weather：用户询问某城市天气时调用
 
-3. record_consensus_params（参数共识记录）：
-   - 每当确认了一个具体数值（无论来自哪个工具、用户口述、还是系统推荐），必须立即调用此工具记录
-   - 记录后参数会实时显示在用户的"实时参数共识板"上
-
-【智能选择策略】
-- 用户问具体数值 → 优先 lookup_local_material_db
-- 用户问流程/规范/原理 → 优先 lookup_cae_knowledge
-- 如果本地速查表没有找到需要的信息，可以再尝试 lookup_cae_knowledge
-- 当用户说"使用默认参数"时，先用 lookup_local_material_db 查标准值
+【工具选择决策树】
+- 问题涉及 CAE/仿真/材料/工程 → 用 1、2 或 3
+- 问题是时间/日期查询 → 用 4
+- 问题是数学计算 → 用 5
+- 问题是天气查询 → 用 6
+- 如果工具返回了错误或空结果，不要重复调用同一工具，改为直接用已知知识作答
 
 【当前已确认的共识参数池】
 {consensus_params}
 
 【对话风格】
 - 专业、简洁，用工程师的语气
-- 在回复结尾列出"📋 待确认清单"，提示用户还缺哪些参数
-- 如果用户的问题超出 CAE 范围，婉转引导回工程话题
+- 在回复结尾列出\"📋 待确认清单\"，提示用户还缺哪些参数
+- 如果用户的问题超出以上所有工具范围，直接用文字回答，不要强行调用工具
 """
+
+
+# 同一工具连续调用相同参数视为死循环，最多循环轮数
+MAX_REACT_TURNS = 5
 
 
 async def chat_node(state: CAEAgentState, tools=None):
     """咨询与专家指导节点（异步版本，支持 MCP 异步工具调用）"""
-    trace_id = state.get("trace_id")
     node_start_time = time.time()
 
     memory_window = get_memory_window(state)
@@ -79,6 +79,12 @@ async def chat_node(state: CAEAgentState, tools=None):
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         consensus_params=json.dumps(current_consensus, ensure_ascii=False, indent=2) if current_consensus else "（暂无）"
     )
+
+    # 🌟 注入压缩后的早期上下文记忆，防止失忆
+    short_term_memory = state.get("context_summary", "")
+    if short_term_memory:
+        system_prompt += f"\n\n【已被归档压缩的早期历史背景与参数约束】：\n{short_term_memory}"
+
     messages = [SystemMessage(content=system_prompt)] + list(memory_window)
 
     # 合并本地工具 + 外部注入的 MCP 工具（使用公共 merge_tools）
@@ -88,9 +94,21 @@ async def chat_node(state: CAEAgentState, tools=None):
     consensus_updates = {}
     response = None
 
-    # ReAct 循环：最多 5 轮工具调用，避免死循环
-    for turn in range(5):
-        response = llm_with_tools.invoke(messages)
+    # 如果有上下文预警，可以在这里动态干预 Prompt（降级机制）
+    if state.get("context_warning"):
+        warning_msg = SystemMessage(content="【系统底层警告】您的上下文记忆已超过预警线（40%），处理能力受限。请务必使用极简语言回复，并尽快引导用户结束当前话题或开启新对话。")
+        messages.insert(1, warning_msg)
+
+    # ── ReAct 循环：最多 MAX_REACT_TURNS 轮 ──
+    for turn in range(MAX_REACT_TURNS):
+        try:
+            response = await llm_with_tools.ainvoke(messages)
+        except Exception as e:
+            # LLM 调用本身出错，直接兜底返回
+            print(f"[Chat] ❌ LLM 调用异常 (turn {turn+1}): {e}")
+            response = AIMessage(content=f"抱歉，处理您的请求时遇到了问题：{e}\n请重新描述您的问题。")
+            break
+
         messages.append(response)
 
         if not response.tool_calls:
@@ -98,6 +116,13 @@ async def chat_node(state: CAEAgentState, tools=None):
             break
 
         print(f"[Chat] 🔧 第 {turn+1} 轮，触发 {len(response.tool_calls)} 个工具调用")
+
+        # ── 达到最后一轮仍有 tool_calls，强制终止并兜底回复 ──
+        if turn == MAX_REACT_TURNS - 1:
+            print(f"[Chat] ⚠️ 已达到最大推理轮数 ({MAX_REACT_TURNS})，强制终止")
+            response = AIMessage(content="非常抱歉，我在多轮尝试后仍无法给出准确结果。请尝试换一种方式提问，或直接提供具体参数值，我将帮您继续。")
+            messages.append(response)
+            break
 
         for tool_call in response.tool_calls:
             tool_name = tool_call["name"]
@@ -121,18 +146,8 @@ async def chat_node(state: CAEAgentState, tools=None):
                     print(f"[Chat] 🔌 调用工具: {tool_name}({tool_args})")
                 tool_instance = tools_by_name[tool_name]
                 try:
+                    tool_start_time = time.time()
                     tool_result = await tool_instance.ainvoke(tool_args)
-
-                    # 🌟 埋点：记录 RAG 调用
-                    if trace_id:
-                        tracer.log_span(
-                            trace_id=trace_id,
-                            span_type="TOOL",
-                            span_name=tool_name,
-                            start_time=time.time(),
-                            input_data=tool_args,
-                            output_data=str(tool_result)[:500]
-                        )
                 except Exception as e:
                     tool_result = f"工具调用失败: {e}"
                     print(f"[Chat] ❌ 工具调用异常: {e}")
@@ -146,17 +161,6 @@ async def chat_node(state: CAEAgentState, tools=None):
             ))
 
     final_response = messages[-1]
-
-    # 🌟 埋点：记录节点整体执行
-    if trace_id:
-        tracer.log_span(
-            trace_id=trace_id,
-            span_type="NODE",
-            span_name="chat_node",
-            start_time=node_start_time,
-            input_data={"turns": len(state.get("messages", []))},
-            output_data=final_response.content if hasattr(final_response, "content") else str(final_response)
-        )
 
     return_payload = {"messages": [final_response]}
     if consensus_updates:

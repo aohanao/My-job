@@ -34,7 +34,7 @@ def _run_param_validation(params, skill_name):
     return None
 
 
-def extractor_node(state: SimPipelineState, tools=None):
+async def extractor_node(state: SimPipelineState, tools=None):
     """参数提取 + 校验一体化节点（合并了原 ParamValidator）"""
     try:
         memory_window = get_memory_window(state)
@@ -77,6 +77,11 @@ def extractor_node(state: SimPipelineState, tools=None):
         if current_consensus:
             final_system_prompt += f"\n\n【核心共识池数据】\n{current_consensus}\n请优先采用这些数据。"
 
+        # 🌟 注入压缩后的早期上下文记忆，防止失忆
+        short_term_memory = state.get("context_summary", "")
+        if short_term_memory:
+            final_system_prompt += f"\n\n【已被归档压缩的早期历史背景与参数约束】：\n{short_term_memory}"
+
         messages = [SystemMessage(content=final_system_prompt)] + memory_window
 
         # 4. 工具循环（使用公共 merge_tools）
@@ -84,7 +89,7 @@ def extractor_node(state: SimPipelineState, tools=None):
         llm_with_tools = llm.bind_tools(active_tools)
 
         for _ in range(3):
-            response = llm_with_tools.invoke(messages)
+            response = await llm_with_tools.ainvoke(messages)
             messages.append(response)
             if not response.tool_calls:
                 break
@@ -96,7 +101,7 @@ def extractor_node(state: SimPipelineState, tools=None):
                     print(f"\n[Extractor] 🔌 触发了工具调用: {tool_name}")
                     tool_instance = tools_by_name[tool_name]
                     try:
-                        tool_result = tool_instance.invoke(tool_args)
+                        tool_result = await tool_instance.ainvoke(tool_args)
                     except Exception as e:
                         tool_result = f"工具异常: {e}"
 
@@ -108,7 +113,7 @@ def extractor_node(state: SimPipelineState, tools=None):
 
         # 5. 调用大模型，强制输出结构化对象
         structured_llm = llm.with_structured_output(DynamicSchema)
-        extracted_obj = structured_llm.invoke(messages)
+        extracted_obj = await structured_llm.ainvoke(messages)
         extracted_data = extracted_obj.dict() if hasattr(extracted_obj, "dict") else extracted_obj
 
         # 6. 处理追问和返回逻辑

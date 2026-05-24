@@ -5,6 +5,9 @@ from langchain_core.chat_history import BaseChatMessageHistory
 
 class SummaryFileChatMessageHistory(BaseChatMessageHistory):
     def __init__(self, session_id, storage_path, llm, max_messages=6):
+        import re
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", session_id):
+            raise ValueError("Invalid session_id format to prevent path traversal.")
         self.session_id = session_id
         self.storage_path = storage_path
         self.llm = llm  # 👈 核心：接收从外部传进来的大模型
@@ -62,6 +65,9 @@ class SummaryFileChatMessageHistory(BaseChatMessageHistory):
 
 # 暴露一个简单的清理函数给前端使用
 def clear_history_by_id(session_id, storage_path="./chat_history"):
+    import re
+    if not re.match(r"^[a-zA-Z0-9_\-]+$", session_id):
+        raise ValueError("Invalid session_id format to prevent path traversal.")
     file_path = os.path.join(storage_path, session_id)
     if os.path.exists(file_path):
         os.remove(file_path)
