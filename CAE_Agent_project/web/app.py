@@ -20,7 +20,7 @@ if sys.platform == 'win32':
 nest_asyncio.apply()
 
 from core.state_graph.builder import build_cae_graph
-from integrations.mcp_client.mcp_manager import MCPConnectionManager, StdioConnectionManager
+from integrations.mcp_client.mcp_manager import UnifiedMCPManager
 from core.eval_sdk import EvalPlatformCallback
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -42,30 +42,19 @@ async def init_mcp_and_graph(session_id: str):
         st.session_state.agent_memory = MemorySaver()
 
     if "mcp_manager" not in st.session_state:
-        st.session_state.mcp_manager = MCPConnectionManager()
-        st.session_state.tools_manager = StdioConnectionManager()
+        # 使用统一大管家管理所有的 MCP 工具
+        st.session_state.mcp_manager = UnifiedMCPManager()
+        
+        print("[App] 正在启动并连接所有 MCP 工具服务器...")
+        await st.session_state.mcp_manager.connect_all()
         
         all_tools = []
         try:
-            # 1. 尝试连接 RAG 服务器 (SSE)
-            await st.session_state.mcp_manager.connect("http://127.0.0.1:8000/sse")
-            rag_tools = await st.session_state.mcp_manager.get_tools()
-            all_tools.extend(rag_tools)
-            st.session_state.mcp_connected = True
+            all_tools = await st.session_state.mcp_manager.get_all_tools()
+            st.session_state.mcp_connected = len(all_tools) > 0
         except Exception as e:
             st.session_state.mcp_connected = False
             st.session_state.mcp_error = str(e)
-            
-        try:
-            # 2. 尝试连接我们在 sandbox 里刚写的简单工具集 (Stdio)
-            python_exe = sys.executable
-            tools_script = os.path.join(_ROOT_DIR, "integrations", "local_tools_server.py")
-            await st.session_state.tools_manager.connect(python_exe, [tools_script])
-            simple_tools = await st.session_state.tools_manager.get_tools()
-            all_tools.extend(simple_tools)
-            print(f"[App] ✅ 成功加载 {len(simple_tools)} 个本地测试工具: {[t.name for t in simple_tools]}")
-        except Exception as e:
-            print(f"[App] ⚠️ 加载本地测试工具失败: {e}")
             
         st.session_state.rag_tools = all_tools
         st.session_state.agent_app = build_cae_graph(

@@ -7,7 +7,7 @@ import os
 # 确保能找到同目录下的 server 模块
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from server import lookup_material_db
+from server import lookup_local_material_db
 
 def main():
     try:
@@ -17,7 +17,7 @@ def main():
 
     app = FastMCP("cae-material-db")
     # 注意：FastMCP 的 tool() 装饰器需要接收函数对象
-    app.tool()(lookup_material_db.func if hasattr(lookup_material_db, "func") else lookup_material_db)
+    app.tool()(lookup_local_material_db.func if hasattr(lookup_local_material_db, "func") else lookup_local_material_db)
     app.run(transport="stdio")
 
 if __name__ == "__main__":

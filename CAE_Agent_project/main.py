@@ -17,7 +17,7 @@ from core.eval_sdk import EvalPlatformCallback
 
 # 🌟 重构后的导入路径
 from core.state_graph.builder import build_cae_graph
-from integrations.mcp_client.mcp_manager import MCPConnectionManager, StdioConnectionManager
+from integrations.mcp_client.mcp_manager import UnifiedMCPManager
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 try:
@@ -54,30 +54,20 @@ def load_history_json(session_name):
 
 async def main():
     print("="*55)
-    print("🤖 CAE 多智能体仿真平台 (重构架构版)")
+    print("[Agent] CAE 多智能体仿真平台 (重构架构版)")
     print("="*55)
 
-    mcp_manager = MCPConnectionManager()
-    tools_manager = StdioConnectionManager()
+    mcp_manager = UnifiedMCPManager()
     rag_tools = []
     
     try:
-        await mcp_manager.connect("http://127.0.0.1:8000/sse")
-        rag_tools.extend(await mcp_manager.get_tools())
+        await mcp_manager.connect_all()
+        rag_tools = await mcp_manager.get_all_tools()
+        print(f"[OK] 成功加载并聚合了 {len(rag_tools)} 个 MCP 工具: {[t.name for t in rag_tools]}")
     except Exception as e:
-        print(f"❌ RAG MCP 连接失败: {e}")
-        
-    try:
-        python_exe = sys.executable
-        tools_script = os.path.join(_ROOT_DIR, "integrations", "local_tools_server.py")
-        await tools_manager.connect(python_exe, [tools_script])
-        simple_tools = await tools_manager.get_tools()
-        rag_tools.extend(simple_tools)
-        print(f"✅ 成功加载 {len(simple_tools)} 个本地测试工具: {[t.name for t in simple_tools]}")
-    except Exception as e:
-        print(f"⚠️ 本地测试工具连接失败: {e}")
+        print(f"[ERROR] 初始化 MCP 服务聚合器失败: {e}")
 
-    session_name = input("📌 会话名称: ").strip() or "default-session"
+    session_name = input("[ID] 会话名称: ").strip() or "default-session"
     thread_config = {"configurable": {"thread_id": session_name}}
 
     if HAS_SQLITE:
@@ -97,7 +87,7 @@ async def run_agent_loop(memory, rag_tools, thread_config, session_name, mcp_man
 
     try:
         while True:
-            user_input = input(f"\n👤 [{session_name}] > ")
+            user_input = input(f"\n[User] [{session_name}] > ")
             if user_input.strip().lower() in ['/exit', 'quit', 'exit']: break
             if not user_input.strip(): continue
 
@@ -116,7 +106,7 @@ async def run_agent_loop(memory, rag_tools, thread_config, session_name, mcp_man
             try:
                 async for chunk in app.astream(initial_input, config=thread_config):
                     for node_name, output in chunk.items():
-                        print(f"⚙️ [{node_name}] 处理中...")
+                        print(f"[Run] [{node_name}] 处理中...")
                         
                         # 🚀 [安全性修复] 增加对 output 的 None 检查
                         if output is None:
@@ -128,15 +118,14 @@ async def run_agent_loop(memory, rag_tools, thread_config, session_name, mcp_man
                 last_msg = final_state.values.get("messages")[-1]
                 
                 if isinstance(last_msg, AIMessage):
-                    print(f"\n🤖 Bot: {last_msg.content}")
+                    print(f"\n[Bot]: {last_msg.content}")
 
                 if not HAS_SQLITE:
                     save_history_json(session_name, final_state.values.get("messages", []))
             except Exception as e:
-                print(f"❌ 运行错误: {e}")
+                print(f"[ERROR] 运行错误: {e}")
     finally:
-        await mcp_manager.disconnect()
-        await tools_manager.disconnect()
+        await mcp_manager.disconnect_all()
 
 if __name__ == "__main__":
     asyncio.run(main())

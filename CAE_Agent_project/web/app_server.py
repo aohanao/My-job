@@ -23,7 +23,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 from core.state_graph.builder import build_cae_graph
-from integrations.mcp_client.mcp_manager import MCPConnectionManager, StdioConnectionManager
+from integrations.mcp_client.mcp_manager import UnifiedMCPManager
 from core.eval_sdk import EvalPlatformCallback
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
@@ -41,8 +41,7 @@ app.add_middleware(
 
 # 全局变量，作为 Single Source of Truth
 agent_memory = MemorySaver()
-mcp_manager = MCPConnectionManager()
-tools_manager = StdioConnectionManager()
+mcp_manager = UnifiedMCPManager()
 agent_app = None
 mcp_connected = False
 mcp_error = ""
@@ -53,39 +52,31 @@ class ResetRequest(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     global agent_app, mcp_connected, mcp_error
-    all_tools = []
-    print("[App] 🚀 开始连接外部 MCP 工具服务...")
+    print("[App] 开始连接外部 MCP 工具服务...")
     
-    # 1. 尝试连接 RAG 服务器 (SSE)
+    await mcp_manager.connect_all()
+    all_tools = []
     try:
-        # 默认连接本地 RAG
-        await mcp_manager.connect("http://127.0.0.1:8000/sse")
-        rag_tools = await mcp_manager.get_tools()
-        all_tools.extend(rag_tools)
-        mcp_connected = True
-        print(f"[App] ✅ 成功连接 RAG 知识库，加载了 {len(rag_tools)} 个知识检索工具")
+        all_tools = await mcp_manager.get_all_tools()
+        mcp_connected = len(all_tools) > 0
+        print(f"[App] 成功聚合加载了 {len(all_tools)} 个 MCP 工具: {[t.name for t in all_tools]}")
     except Exception as e:
         mcp_connected = False
         mcp_error = str(e)
-        print(f"[App] ❌ 连接 RAG 知识库失败: {e}")
+        print(f"[App] 获取工具列表失败: {e}")
         
-    # 2. 尝试连接本地 Stdio 工具集
-    try:
-        python_exe = sys.executable
-        tools_script = os.path.join(_ROOT_DIR, "integrations", "local_tools_server.py")
-        await tools_manager.connect(python_exe, [tools_script])
-        simple_tools = await tools_manager.get_tools()
-        all_tools.extend(simple_tools)
-        print(f"[App] ✅ 成功加载 {len(simple_tools)} 个本地 Stdio 测试工具: {[t.name for t in simple_tools]}")
-    except Exception as e:
-        print(f"[App] ⚠️ 加载本地测试工具失败: {e}")
-        
-    # 3. 构造 LangGraph 引擎
     agent_app = build_cae_graph(
         checkpointer=agent_memory, 
         tools=all_tools
     )
-    print("[App] 🧠 CAE 智能体推演图已构建完成！")
+    print("[App] CAE 智能体推演图已构建完成！")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("[App] 正在关闭并清理所有 MCP 连接...")
+    await mcp_manager.disconnect_all()
+    print("[App] 所有连接已释放。")
 
 
 # ==========================================

@@ -118,7 +118,7 @@
         <header class="glass-panel rounded-2xl p-4 flex justify-between items-center flex-shrink-0">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                    <i data-lucide="cpu" class="w-6 h-6 text-white animate-pulse"></i>
+                    <lucide-icon name="cpu" class-name="w-6 h-6 text-white animate-pulse"></lucide-icon>
                 </div>
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent flex items-center gap-2">
@@ -131,7 +131,7 @@
             <div class="flex items-center gap-4 text-xs">
                 <!-- 会话重置 -->
                 <button @click="resetSession" class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition">
-                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    <lucide-icon name="rotate-ccw" class-name="w-3.5 h-3.5"></lucide-icon>
                     <span>重置会话</span>
                 </button>
             </div>
@@ -145,7 +145,7 @@
                 <!-- 1. 会话映射与 RAG 状态 -->
                 <div class="glass-panel rounded-2xl p-4 space-y-3 flex-shrink-0">
                     <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <i data-lucide="settings" class="w-4 h-4 text-cyan-400"></i>
+                        <lucide-icon name="settings" class-name="w-4 h-4 text-cyan-400"></lucide-icon>
                         会话参数映射
                     </h3>
                     <div class="flex items-center gap-2">
@@ -175,7 +175,7 @@
                 <!-- 2. 意图决策引擎 -->
                 <div class="glass-panel rounded-2xl p-4 flex-shrink-0 space-y-3">
                     <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                        <i data-lucide="zap" class="w-4 h-4 text-indigo-400"></i>
+                        <lucide-icon name="zap" class-name="w-4 h-4 text-indigo-400"></lucide-icon>
                         意图决策引擎 (Intent Engine)
                     </h3>
                     <div class="grid grid-cols-2 gap-3">
@@ -193,13 +193,13 @@
                 <!-- 3. 物理参数实时看板 -->
                 <div class="glass-panel rounded-2xl p-4 flex-grow flex flex-col min-h-0">
                     <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-3 flex-shrink-0">
-                        <i data-lucide="sliders" class="w-4 h-4 text-emerald-400"></i>
+                        <lucide-icon name="sliders" class-name="w-4 h-4 text-emerald-400"></lucide-icon>
                         物理参数实时提取看板
                     </h3>
                     
                     <div class="flex-grow overflow-y-auto space-y-3 pr-1 min-h-0">
                         <div v-if="Object.keys(runtimeState.params).length === 0" class="flex flex-col items-center justify-center h-full text-slate-500 text-xs py-8">
-                            <i data-lucide="info" class="w-6 h-6 mb-1 text-slate-600"></i>
+                            <lucide-icon name="info" class-name="w-6 h-6 mb-1 text-slate-600"></lucide-icon>
                             系统正在监听并提取关键物理参数
                         </div>
                         
@@ -233,7 +233,7 @@
                 <!-- 运行态指示器 -->
                 <div class="bg-slate-950/80 border-b border-slate-900 px-4 py-2 flex items-center justify-between text-xs flex-shrink-0" v-if="runningNode">
                     <span class="flex items-center gap-1.5 text-cyan-400 font-semibold">
-                        <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i>
+                        <lucide-icon name="loader-2" class-name="w-3.5 h-3.5 animate-spin"></lucide-icon>
                         ⚡ 引擎流式推演中...
                     </span>
                     <span class="font-mono text-[10px] bg-indigo-950/50 text-indigo-400 border border-indigo-900 px-2 py-0.5 rounded">
@@ -245,7 +245,7 @@
                 <div id="chatBox" class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6 min-h-0">
                     <div v-if="chatHistory.length === 0" class="flex flex-col items-center justify-center h-full text-slate-500 text-xs py-12">
                         <div class="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mb-3">
-                            <i data-lucide="message-square" class="w-6 h-6 text-slate-600"></i>
+                            <lucide-icon name="message-square" class-name="w-6 h-6 text-slate-600"></lucide-icon>
                         </div>
                         <p class="font-semibold text-slate-400">CAE 增强智能体已就绪</p>
                         <p class="text-slate-500 mt-1">请输入工程描述或仿真控制指令（例如进行隧道参数化分析）</p>
@@ -257,7 +257,7 @@
                         <!-- 头像/图标 -->
                         <div :class="['w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white shadow-md', 
                                       msg.role === 'user' ? 'bg-gradient-to-tr from-cyan-500 to-indigo-500' : 'bg-slate-800 border border-slate-700']">
-                            <i :data-lucide="msg.role === 'user' ? 'user' : 'bot'" class="w-4 h-4"></i>
+                            <lucide-icon :name="msg.role === 'user' ? 'user' : 'bot'" class-name="w-4 h-4"></lucide-icon>
                         </div>
 
                         <!-- 气泡内容 -->
@@ -275,7 +275,7 @@
                                         TERMINAL: Abaqus Solver Logs
                                     </span>
                                     <button @click="copyLogs(msg.log_content)" class="hover:text-white transition flex items-center gap-0.5">
-                                        <i data-lucide="copy" class="w-3 h-3"></i>
+                                        <lucide-icon name="copy" class-name="w-3 h-3"></lucide-icon>
                                         <span>复制日志</span>
                                     </button>
                                 </div>
@@ -292,8 +292,8 @@
                     <form @submit.prevent="sendMessage" class="flex gap-2 relative">
                         <input type="text" v-model="inputText" :disabled="isThinking" placeholder="输入工程物理模型描述，启动多智能体仿真..." class="flex-grow bg-slate-900/80 border border-slate-800 text-xs rounded-xl py-3 pl-4 pr-12 text-slate-200 neon-border-cyan placeholder-slate-500 disabled:opacity-50 transition">
                         <button type="submit" :disabled="isThinking || !inputText" class="absolute right-1.5 top-1.5 bottom-1.5 px-4 bg-cyan-600 hover:bg-cyan-500 active:scale-95 text-xs text-white rounded-lg shadow-md disabled:opacity-50 transition flex items-center justify-center">
-                            <i data-lucide="send" class="w-4 h-4" v-if="!isThinking"></i>
-                            <i data-lucide="loader-2" class="w-4 h-4 animate-spin" v-else></i>
+                            <lucide-icon name="send" class-name="w-4 h-4" v-if="!isThinking"></lucide-icon>
+                            <lucide-icon name="loader-2" class-name="w-4 h-4 animate-spin" v-else></lucide-icon>
                         </button>
                     </form>
                 </div>
@@ -306,7 +306,87 @@
     <script>
         const { createApp, ref, onMounted, nextTick, watch, onBeforeUnmount } = Vue;
 
-        createApp({
+        const LucideIcon = {
+            name: 'LucideIcon',
+            props: {
+                name: {
+                    type: String,
+                    required: true
+                },
+                className: {
+                    type: String,
+                    default: ''
+                }
+            },
+            template: `
+                <svg v-if="name === 'cpu'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <rect x="4" y="4" width="16" height="16" rx="2"/>
+                    <rect x="9" y="9" width="6" height="6"/>
+                    <line x1="9" x2="9" y1="1" y2="4"/>
+                    <line x1="15" x2="15" y1="1" y2="4"/>
+                    <line x1="9" x2="9" y1="20" y2="23"/>
+                    <line x1="15" x2="15" y1="20" y2="23"/>
+                    <line x1="20" x2="23" y1="9" y2="9"/>
+                    <line x1="20" x2="23" y1="15" y2="15"/>
+                    <line x1="1" x2="4" y1="9" y2="9"/>
+                    <line x1="1" x2="4" y1="15" y2="15"/>
+                </svg>
+                <svg v-else-if="name === 'rotate-ccw'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                </svg>
+                <svg v-else-if="name === 'settings'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg v-else-if="name === 'zap'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                <svg v-else-if="name === 'sliders'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <line x1="4" x2="4" y1="21" y2="14"/>
+                    <line x1="4" x2="4" y1="10" y2="3"/>
+                    <line x1="12" x2="12" y1="21" y2="12"/>
+                    <line x1="12" x2="12" y1="8" y2="3"/>
+                    <line x1="20" x2="20" y1="21" y2="16"/>
+                    <line x1="20" x2="20" y1="12" y2="3"/>
+                    <line x1="2" x2="6" y1="14" y2="14"/>
+                    <line x1="10" x2="14" y1="8" y2="8"/>
+                    <line x1="18" x2="22" y1="16" y2="16"/>
+                </svg>
+                <svg v-else-if="name === 'info'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" x2="12" y1="16" y2="12"/>
+                    <line x1="12" x2="12.01" y1="8" y2="8"/>
+                </svg>
+                <svg v-else-if="name === 'message-square'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <svg v-else-if="name === 'user'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <svg v-else-if="name === 'bot'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <rect x="3" y="11" width="18" height="10" rx="2"/>
+                    <circle cx="12" cy="5" r="2"/>
+                    <path d="M12 7v4"/>
+                    <line x1="8" x2="8" y1="16" y2="16"/>
+                    <line x1="16" x2="16" y1="16" y2="16"/>
+                </svg>
+                <svg v-else-if="name === 'copy'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                <svg v-else-if="name === 'send'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <line x1="22" x2="11" y1="2" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                <svg v-else-if="name === 'loader-2'" :class="className" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide">
+                    <path d="M21 12a9 9 0 1 1-6.21-8.56"/>
+                </svg>
+            `
+        };
+
+        const app = createApp({
             setup() {
                 const threadId = ref('default-session');
                 const mcpStatus = ref({ mcp_connected: false, mcp_error: "" });
@@ -538,9 +618,7 @@
                 };
 
                 const reCreateIcons = () => {
-                    if (typeof lucide !== 'undefined') {
-                        lucide.createIcons();
-                    }
+                    // 已改用 Vue 组件 lucide-icon 渲染 SVG，避免外部 JS 直接修改 DOM 导致 Vue 虚拟 DOM 冲突崩溃
                 };
 
                 onMounted(() => {
@@ -573,7 +651,10 @@
                     copyLogs
                 };
             }
-        }).mount('#app');
+        });
+        
+        app.component('lucide-icon', LucideIcon);
+        app.mount('#app');
     </script>
 </body>
 </html>

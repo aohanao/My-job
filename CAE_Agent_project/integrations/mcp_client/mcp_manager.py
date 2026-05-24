@@ -1,11 +1,13 @@
 import asyncio
 import os
+import sys
 from contextlib import AsyncExitStack
 import mcp
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client, get_default_environment, StdioServerParameters as ServerParameters
 from pydantic import create_model, Field, BaseModel
+from langchain_core.tools import StructuredTool
 
 def json_schema_to_pydantic(model_name: str, schema: dict):
     """将 JSON Schema 字典动态转换为 Pydantic BaseModel"""
@@ -150,3 +152,125 @@ class StdioConnectionManager(MCPConnectionManager):
             await self._exit_stack.aclose()
             self._session = None
             raise e
+
+
+class UnifiedMCPManager:
+    """
+    统一 MCP 客户端管理器。
+    负责一键式配置、启动并聚合所有的 MCP 连接与工具。
+    """
+    def __init__(self):
+        self.managers = {}
+
+    async def connect_all(self):
+        # 1. 连接 RAG MCP (SSE)
+        sse_manager = MCPConnectionManager()
+        try:
+            sse_url = os.environ.get("RAG_MCP_URL", "http://127.0.0.1:8000/sse")
+            await sse_manager.connect(sse_url)
+            self.managers["rag_mcp"] = sse_manager
+            print(f"[UnifiedMCP] 成功连接 RAG MCP: {sse_url}")
+        except Exception as e:
+            print(f"[UnifiedMCP] 连接 RAG MCP 失败 (RAG 模块可能未启动): {e}")
+
+        # 2. 连接本地 SimpleTools (Stdio)
+        stdio_manager = StdioConnectionManager()
+        try:
+            python_exe = sys.executable
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            possible_paths = [
+                os.path.join(current_dir, "..", "local_tools_server.py"),
+                os.path.join(current_dir, "local_tools_server.py"),
+                os.path.join(os.getcwd(), "integrations", "local_tools_server.py"),
+                os.path.join(os.getcwd(), "local_tools_server.py"),
+            ]
+            tools_script = next((p for p in possible_paths if os.path.exists(p)), None)
+            if tools_script:
+                await stdio_manager.connect(python_exe, [tools_script])
+                self.managers["local_tools"] = stdio_manager
+                print(f"[UnifiedMCP] 成功连接本地工具服务器: {tools_script}")
+            else:
+                print("[UnifiedMCP] 未找到 local_tools_server.py 路径，跳过连接")
+        except Exception as e:
+            print(f"[UnifiedMCP] 连接本地工具服务器失败: {e}")
+
+        # 3. 连接 CAE 材料数据库 (Stdio)
+        material_manager = StdioConnectionManager()
+        try:
+            python_exe = sys.executable
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            possible_material_paths = [
+                os.path.join(current_dir, "server_entry.py"),
+                os.path.join(current_dir, "integrations", "mcp_client", "server_entry.py"),
+                os.path.join(os.getcwd(), "integrations", "mcp_client", "server_entry.py"),
+                os.path.join(os.getcwd(), "mcp_client", "server_entry.py"),
+            ]
+            material_script = next((p for p in possible_material_paths if os.path.exists(p)), None)
+            if material_script:
+                await material_manager.connect(python_exe, [material_script])
+                self.managers["material_db"] = material_manager
+                print(f"[UnifiedMCP] 成功连接材料数据库服务器: {material_script}")
+            else:
+                print("[UnifiedMCP] 未找到 server_entry.py 路径，跳过连接")
+        except Exception as e:
+            print(f"[UnifiedMCP] 连接材料数据库服务器失败: {e}")
+
+    async def get_all_tools(self) -> list[StructuredTool]:
+        all_tools = []
+        for name, manager in self.managers.items():
+            try:
+                tools = await manager.get_tools()
+                all_tools.extend(tools)
+                print(f"[UnifiedMCP] 从 {name} 获取到 {len(tools)} 个工具")
+            except Exception as e:
+                print(f"[UnifiedMCP] 从 {name} 获取工具失败: {e}")
+        return all_tools
+
+    async def disconnect_all(self):
+        for name, manager in list(self.managers.items()):
+            try:
+                await manager.disconnect()
+                print(f"[UnifiedMCP] 已断开与 {name} 的连接")
+            except BaseException as e:
+                print(f"[UnifiedMCP] 断开 {name} 连接失败: {e}")
+        self.managers.clear()
+
+
+if __name__ == "__main__":
+    async def main():
+        print("=== 开始测试 UnifiedMCPManager ===")
+        unified_manager = UnifiedMCPManager()
+        
+        print("[INFO] 正在建立所有工具连接...")
+        await unified_manager.connect_all()
+        
+        try:
+            tools = await unified_manager.get_all_tools()
+            print(f"\n[INFO] 最终聚合发现 {len(tools)} 个工具:")
+            for i, tool in enumerate(tools, 1):
+                print(f"  {i}. {tool.name}")
+                print(f"     描述: {tool.description}")
+            
+            # 测试调用 get_current_time 工具
+            time_tool = next((t for t in tools if t.name == "get_current_time"), None)
+            if time_tool:
+                print("\n[TEST] 测试调用 'get_current_time' 工具...")
+                res = await time_tool.ainvoke({"timezone": "Asia/Shanghai"})
+                print(f"   调用结果: {res}")
+                
+            # 测试调用 lookup_material_db 工具（如果有的话）
+            mat_tool = next((t for t in tools if t.name == "lookup_material_db"), None)
+            if mat_tool:
+                print("\n[TEST] 测试调用 'lookup_material_db' 工具...")
+                res = await mat_tool.ainvoke({"query": "C30"})
+                print(f"   调用结果: {res}")
+                
+        except Exception as e:
+            print(f"[ERROR] 获取或测试工具时出错: {e}")
+        finally:
+            print("\n[INFO] 正在断开所有连接...")
+            await unified_manager.disconnect_all()
+            print("[INFO] 测试结束。")
+
+    asyncio.run(main())
+
