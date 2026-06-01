@@ -18,9 +18,16 @@
 
 ### 2.2 编排引擎：基于 LangGraph 的有向有权图
 选择 LangGraph 而非简单的顺序链（Sequential Chain）或 AgentExecutor 的原因：
--   **状态持久化 (State Management)**：通过 `CAEAgentState` 强制解耦各节点状态，利用 `MemorySaver` 实现会话级别的快照与恢复。
+-   **状态持久化 (State Management)**：通过 `CAEAgentState` 强制解耦各节点状态，利用 `AsyncSqliteSaver` (SQLite 数据库) 实现跨服务重启的会话级别快照与恢复，并与 CLI 端历史无缝互通。
 *   **动作类型拦截 (Action Gating)**：系统通过 `Planner` 预评估意图。若仅为咨询则导向 `Chat`；若为开工指令则导向 `Extractor`，实现了安全的人机协同控制。
 *   **循环控制 (Cyclic Flows)**：支持受控的无限/有限循环，这是实现 Reflexion 的技术前提。
+
+### 2.3 状态持久化与连接自愈机制 (Web 端优化)
+为了满足工业级稳定性的要求，我们在 Web 控制座舱中加入了以下重要机制：
+1. **SQLite 异步状态持久化**：将底层的内存状态存储升级为基于 SQLite 的 `AsyncSqliteSaver`，对话历史和仿真参数被永久记录在 `.data/checkpoints.sqlite` 中，与 CLI 端共享同一历史存储。即使 Web 服务重启，用户依然可以通过历史 Session ID 完整恢复先前的对话与状态。
+2. **纯本地离线网卡感知**：移除了任何对外网服务器的检测依赖，在控制台启动时通过纯本地的主机名与网卡枚举机制，智能识别并在终端输出可直接点击的局域网 IPv4 访问链接。
+3. **RAG MCP 服务动态自愈重连**：当用户在智能体 Web 服务启动**之后**才开启 RAG 服务时，系统依靠前端心跳轮询与后端幂等重连机制，自动重连 RAG 并动态热重构（Rebuild）智能体推演图，无需重启智能体服务即可实时上线 RAG 知识库功能。
+4. **会话 ID 智能清洗**：网页端与后端均集成了空白会话 ID 清洗逻辑，默认会话 ID 简化为 `"default"`。若输入为空则自动回滚至默认会话，杜绝产生非法空白 Session ID。
 
 #### 系统拓扑图 (Workflow Topology)
 
@@ -235,3 +242,16 @@ CAE 仿真交付场景下，参数链条长且物理耦合度极高。传统的 
 - **工厂逻辑**：
     - `local`: 直接导入 Python 函数，零开销。
     - `mcp`: 实时通过 `subprocess` 拉起一个全新的 MCP Server 进程，实现完全的算法隔离。
+
+
+1. 为什么这两个文件夹现在是空的？
+sessions/ 文件夹：这是**旧版 CLI 命令行版本（main.py）**使用的会话目录。在您启动 CLI 端时，它会把对话以 JSON 文件形式（如 default.json）存放在这里。由于您近期运行的都是 Web 客户端，它现在直接使用基于 SQLite 的 AsyncSqliteSaver 把所有历史存放在了数据库文件（.data/checkpoints.sqlite）中，所以这里暂时没有产生 CLI JSON 文件。
+sandbox/run_logs/ 文件夹：这是先前设计的日志预留目录。在当前的实际运行中，宿主机桥接服务（host_cae_bridge.py）为了防止路径混乱，将生成的 Abaqus 执行日志直接存放在了脚本同级目录中（即 sandbox/generated_scripts/<脚本名>.log）。因此 run_logs 处于闲置状态。
+2. 多智能体项目中，我们的“沙箱”起到了什么关键作用？
+在这个项目中，沙箱不仅仅是“放文件的地方”，而是起到了以下 三大核心安全与业务支撑作用：
+
+环境与运行隔离（Security Isolation）： 大模型生成的 Abaqus 脚本本质上是未经审计的代码。沙箱限制了所有的脚本生成和仿真运行均在 sandbox/generated_scripts 下进行，避免非法脚本污染或破坏宿主机的其他核心系统文件。
+
+自愈反思闭环的安全物理外壳（Self-Correction Gateway）： 在 Reflexion 模式下，当 Executor（执行节点）发现仿真在沙箱内运行崩溃时，沙箱提供了物理日志监控。程序会实时抓取沙箱内生成的日志最后 15 行错误栈（如 AbaqusException），将该报错报告回灌给 Extractor 和 Coder 智能体。智能体依靠这个沙箱日志反馈，才能知道“参数设置不合理导致计算发散”，从而进行代码自愈与重新生成。
+
+Docker 混合部署下的“共享网关”（Shared Data Volume）： 如果您采用 Docker 部署 Agent（大脑），而把 Abaqus（身体）留在物理机上，沙箱就是它们之间的连接通道。在 Docker 运行时，sandbox/ 会作为共享卷同时挂载在容器和宿主机上。容器内 Agent 往沙箱里写脚本，宿主机读脚本运行并写回日志，通过这种“共享沙箱”打破了容器的物理隔离。

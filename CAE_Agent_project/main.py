@@ -67,7 +67,7 @@ async def main():
     except Exception as e:
         print(f"[ERROR] 初始化 MCP 服务聚合器失败: {e}")
 
-    session_name = input("[ID] 会话名称: ").strip() or "default-session"
+    session_name = input("[ID] 会话名称: ").strip() or "default"
     thread_config = {"configurable": {"thread_id": session_name}}
 
     if HAS_SQLITE:

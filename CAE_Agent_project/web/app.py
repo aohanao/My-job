@@ -203,13 +203,13 @@ async def run_agent_step(user_input: str, session_id: str):
         traceback.print_exc()
 
 if "session_id" not in st.session_state:
-    st.session_state.session_id = "default-session"
+    st.session_state.session_id = "default"
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "consensus_params" not in st.session_state:
     st.session_state.consensus_params = {}
 if "temp_thread_id" not in st.session_state:
-    st.session_state.temp_thread_id = "default-session"
+    st.session_state.temp_thread_id = "default"
 
 def get_or_create_event_loop():
     """安全获取或创建事件循环，并在 session_state 中持久化，防止线程漂移"""
@@ -234,8 +234,11 @@ except Exception as e:
 
 # ID 变更事件回调函数：纯同步！不涉及 async 阻塞，彻底避免卡死
 def on_thread_id_change():
-    new_id = st.session_state.input_thread_id
-    if new_id and new_id != st.session_state.session_id:
+    new_id = st.session_state.input_thread_id.strip() if st.session_state.input_thread_id else ""
+    if not new_id:
+        new_id = "default"
+    st.session_state.input_thread_id = new_id
+    if new_id != st.session_state.session_id:
         st.session_state.session_id = new_id
         # 读取对应老历史！
         sync_state_from_graph(new_id)

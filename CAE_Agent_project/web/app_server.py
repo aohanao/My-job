@@ -40,7 +40,8 @@ app.add_middleware(
 )
 
 # 全局变量，作为 Single Source of Truth
-agent_memory = MemorySaver()
+agent_memory_manager = None
+agent_memory = None
 mcp_manager = UnifiedMCPManager()
 agent_app = None
 mcp_connected = False
@@ -51,31 +52,73 @@ class ResetRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    global agent_app, mcp_connected, mcp_error
+    global agent_app, agent_memory, agent_memory_manager, mcp_connected, mcp_error
     print("[App] 开始连接外部 MCP 工具服务...")
     
     await mcp_manager.connect_all()
     all_tools = []
     try:
         all_tools = await mcp_manager.get_all_tools()
-        mcp_connected = len(all_tools) > 0
+        # 仅当 RAG MCP (SSE) 连接成功时，RAG 知识库才显示为在线状态
+        mcp_connected = "rag_mcp" in mcp_manager.managers and mcp_manager.managers["rag_mcp"]._session is not None
         print(f"[App] 成功聚合加载了 {len(all_tools)} 个 MCP 工具: {[t.name for t in all_tools]}")
     except Exception as e:
         mcp_connected = False
         mcp_error = str(e)
         print(f"[App] 获取工具列表失败: {e}")
         
+    # 初始化 SQLite 持久化检查点存储
+    try:
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        os.makedirs(".data", exist_ok=True)
+        agent_memory_manager = AsyncSqliteSaver.from_conn_string(".data/checkpoints.sqlite")
+        agent_memory = await agent_memory_manager.__aenter__()
+        print("[App] 成功加载 SQLite 异步持久化检查点存储 (.data/checkpoints.sqlite)")
+    except Exception as e:
+        from langgraph.checkpoint.memory import MemorySaver
+        agent_memory = MemorySaver()
+        print(f"[App] 加载 SQLite 存储失败，已降级为内存存储 MemorySaver: {e}")
+        
     agent_app = build_cae_graph(
         checkpointer=agent_memory, 
         tools=all_tools
     )
     print("[App] CAE 智能体推演图已构建完成！")
+    
+    # 打印可访问的网址信息
+    import socket
+    local_ip = "127.0.0.1"
+    try:
+        # 纯本地获取局域网 IPv4，无需联网或连接外部服务器 (如 8.8.8.8)
+        hostname = socket.gethostname()
+        ip_addresses = socket.gethostbyname_ex(hostname)[2]
+        for ip in ip_addresses:
+            if not ip.startswith("127.") and not ip.startswith("169.254."):
+                local_ip = ip
+                break
+    except Exception:
+        pass
+            
+    print("=" * 60)
+    print(f"[App] CAE 增强智能体 Web 控制座舱已成功启动！")
+    print(f"[App] 本地访问地址: http://localhost:8501")
+    print(f"[App] 本地访问地址: http://127.0.0.1:8501")
+    if local_ip != "127.0.0.1":
+        print(f"[App] 局域网访问地址: http://{local_ip}:8501")
+    print("=" * 60)
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    global agent_memory_manager
     print("[App] 正在关闭并清理所有 MCP 连接...")
     await mcp_manager.disconnect_all()
+    if agent_memory_manager:
+        try:
+            await agent_memory_manager.__aexit__(None, None, None)
+            print("[App] 已安全关闭 SQLite 异步持久化存储连接。")
+        except Exception as e:
+            print(f"[App] 关闭 SQLite 存储连接时发生异常: {e}")
     print("[App] 所有连接已释放。")
 
 
@@ -85,6 +128,61 @@ async def shutdown_event():
 
 @app.get("/api/mcp_status")
 async def get_mcp_status():
+    global mcp_connected, agent_app, mcp_error
+    
+    # 检查当前 RAG 连接状态是否存活 (支持动态断开感知)
+    rag_active = False
+    if "rag_mcp" in mcp_manager.managers:
+        try:
+            rag_active = await mcp_manager.managers["rag_mcp"].is_alive()
+        except:
+            pass
+            
+    if not rag_active:
+        # 如果未存活，尝试动态重连
+        try:
+            await mcp_manager.connect_all()
+            new_rag_active = False
+            if "rag_mcp" in mcp_manager.managers:
+                new_rag_active = await mcp_manager.managers["rag_mcp"].is_alive()
+                
+            if new_rag_active:
+                # 重新获取全部工具并动态重构智能体推演图 (加载 RAG)
+                all_tools = await mcp_manager.get_all_tools()
+                agent_app = build_cae_graph(
+                    checkpointer=agent_memory, 
+                    tools=all_tools
+                )
+                mcp_connected = True
+                mcp_error = ""
+                print(f"[App] 动态连接 RAG MCP 成功！已重新构建智能体推演图，当前聚合工具: {[t.name for t in all_tools]}")
+            else:
+                # 重连失败，如果之前是连接状态，说明刚刚被关闭了，需要热重构图以移出失效的 RAG 工具
+                if mcp_connected:
+                    all_tools = await mcp_manager.get_all_tools()
+                    agent_app = build_cae_graph(
+                        checkpointer=agent_memory, 
+                        tools=all_tools
+                    )
+                    mcp_connected = False
+                    print(f"[App] 检测到 RAG MCP 已关闭！已重新热构建图（移除 RAG 工具），当前聚合工具: {[t.name for t in all_tools]}")
+        except Exception as e:
+            mcp_error = str(e)
+            if mcp_connected:
+                # 捕获异常且原先为连接状态，进行图重构防错
+                try:
+                    all_tools = await mcp_manager.get_all_tools()
+                    agent_app = build_cae_graph(
+                        checkpointer=agent_memory, 
+                        tools=all_tools
+                    )
+                except:
+                    pass
+                mcp_connected = False
+    else:
+        # 如果依然存活，确保全局状态 mcp_connected 正确设为 True
+        mcp_connected = True
+            
     return {
         "mcp_connected": mcp_connected,
         "mcp_error": mcp_error
@@ -94,8 +192,11 @@ async def get_mcp_status():
 async def get_history(session_id: str):
     if not agent_app:
         return []
+    session_id = session_id.strip() if session_id else "default"
+    if not session_id:
+        session_id = "default"
     config = {"configurable": {"thread_id": session_id}}
-    state = agent_app.get_state(config)
+    state = await agent_app.aget_state(config)
     
     messages = []
     consensus_params = {}
@@ -148,8 +249,11 @@ async def reset_session(req: ResetRequest):
     if not agent_app:
         raise HTTPException(status_code=500, detail="Agent graph not initialized")
     
-    config = {"configurable": {"thread_id": req.session_id}}
-    agent_app.update_state(config, {
+    session_id = req.session_id.strip() if req.session_id else "default"
+    if not session_id:
+        session_id = "default"
+    config = {"configurable": {"thread_id": session_id}}
+    await agent_app.aupdate_state(config, {
         "messages": [],
         "consensus_params": {},
         "script_path": "",
@@ -173,7 +277,9 @@ async def websocket_chat(websocket: WebSocket):
             data = await websocket.receive_text()
             payload = json.loads(data)
             action = payload.get("action")
-            session_id = payload.get("session_id", "default-session")
+            session_id = payload.get("session_id", "default").strip()
+            if not session_id:
+                session_id = "default"
             
             if action == "chat":
                 user_message = payload.get("message", "")
@@ -248,7 +354,7 @@ async def run_agent_stream(websocket: WebSocket, user_input: str, session_id: st
                 if isinstance(output, dict) and "consensus_params" in output:
                     new_params = output["consensus_params"]
                     if new_params:
-                        state = agent_app.get_state(thread_config)
+                        state = await agent_app.aget_state(thread_config)
                         accumulated_params = state.values.get("consensus_params", {}) if state else {}
                         await websocket.send_json({
                             "type": "consensus_params",
@@ -256,7 +362,7 @@ async def run_agent_stream(websocket: WebSocket, user_input: str, session_id: st
                         })
                         
         # 4. 推演彻底结束，与图的最终真实状态进行一次硬同步
-        state = agent_app.get_state(thread_config)
+        state = await agent_app.aget_state(thread_config)
         if state and hasattr(state, "values") and state.values:
             consensus_params = state.values.get("consensus_params", {})
             last_script_path = state.values.get("script_path", "")
@@ -308,7 +414,10 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 async def read_index():
     index_path = os.path.join(static_dir, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+        )
     return {"message": "CAE Agent Web Server is running. Place index.html in web/static/ to start chatbot UI."}
 
 

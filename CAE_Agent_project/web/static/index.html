@@ -388,7 +388,7 @@
 
         const app = createApp({
             setup() {
-                const threadId = ref('default-session');
+                const threadId = ref('default');
                 const mcpStatus = ref({ mcp_connected: false, mcp_error: "" });
                 const wsConnected = ref(false);
                 const isThinking = ref(false);
@@ -514,10 +514,13 @@
                     });
                     
                     // WebSocket 发送
+                    if (!threadId.value || !threadId.value.trim()) {
+                        threadId.value = 'default';
+                    }
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
                             action: 'chat',
-                            session_id: threadId.value,
+                            session_id: threadId.value.trim(),
                             message: msgText
                         }));
                     } else {
@@ -527,6 +530,12 @@
 
                 // 会话 ID 切换读取历史
                 const loadHistory = async () => {
+                    const cleaned = threadId.value ? threadId.value.trim() : '';
+                    if (!cleaned) {
+                        threadId.value = 'default';
+                    } else {
+                        threadId.value = cleaned;
+                    }
                     try {
                         const res = await fetch(`${BASE_URL}/api/history?session_id=${threadId.value}`);
                         if (res.ok) {
@@ -548,6 +557,12 @@
                 };
 
                 const onThreadIdChange = () => {
+                    const cleaned = threadId.value ? threadId.value.trim() : '';
+                    if (!cleaned) {
+                        threadId.value = 'default';
+                    } else {
+                        threadId.value = cleaned;
+                    }
                     loadHistory();
                 };
 

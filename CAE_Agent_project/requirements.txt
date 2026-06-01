@@ -1,4 +1,6 @@
 langgraph
+langgraph-checkpoint-sqlite
+aiosqlite
 jinja2
 langchain-openai
 langchain-core

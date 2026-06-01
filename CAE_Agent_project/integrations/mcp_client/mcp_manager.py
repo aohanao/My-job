@@ -115,6 +115,24 @@ class MCPConnectionManager:
             langchain_tools.append(lc_tool)
         return langchain_tools
 
+    async def is_alive(self) -> bool:
+        if self._session is None:
+            return False
+        try:
+            # 尝试通过列出工具（限制超时 1.0 秒）来确认会话的心跳存活状态
+            await asyncio.wait_for(self._session.list_tools(), timeout=1.0)
+            return True
+        except Exception:
+            # 捕获到异常（如连接已关闭、拒绝服务等），进行资源清理并置空
+            if self._exit_stack:
+                try:
+                    await self._exit_stack.aclose()
+                except Exception:
+                    pass
+            self._session = None
+            self._exit_stack = None
+            return False
+
     async def disconnect(self):
         if self._exit_stack:
             await self._exit_stack.aclose()
@@ -164,56 +182,80 @@ class UnifiedMCPManager:
 
     async def connect_all(self):
         # 1. 连接 RAG MCP (SSE)
-        sse_manager = MCPConnectionManager()
-        try:
-            sse_url = os.environ.get("RAG_MCP_URL", "http://127.0.0.1:8000/sse")
-            await sse_manager.connect(sse_url)
-            self.managers["rag_mcp"] = sse_manager
-            print(f"[UnifiedMCP] 成功连接 RAG MCP: {sse_url}")
-        except Exception as e:
-            print(f"[UnifiedMCP] 连接 RAG MCP 失败 (RAG 模块可能未启动): {e}")
+        rag_alive = False
+        if "rag_mcp" in self.managers:
+            try:
+                rag_alive = await self.managers["rag_mcp"].is_alive()
+            except Exception:
+                pass
+                
+        if not rag_alive:
+            sse_manager = MCPConnectionManager()
+            try:
+                sse_url = os.environ.get("RAG_MCP_URL", "http://127.0.0.1:8000/sse")
+                await sse_manager.connect(sse_url)
+                self.managers["rag_mcp"] = sse_manager
+                print(f"[UnifiedMCP] 成功连接 RAG MCP: {sse_url}")
+            except Exception as e:
+                print(f"[UnifiedMCP] 连接 RAG MCP 失败 (RAG 模块可能未启动): {e}")
 
         # 2. 连接本地 SimpleTools (Stdio)
-        stdio_manager = StdioConnectionManager()
-        try:
-            python_exe = sys.executable
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            possible_paths = [
-                os.path.join(current_dir, "..", "local_tools_server.py"),
-                os.path.join(current_dir, "local_tools_server.py"),
-                os.path.join(os.getcwd(), "integrations", "local_tools_server.py"),
-                os.path.join(os.getcwd(), "local_tools_server.py"),
-            ]
-            tools_script = next((p for p in possible_paths if os.path.exists(p)), None)
-            if tools_script:
-                await stdio_manager.connect(python_exe, [tools_script])
-                self.managers["local_tools"] = stdio_manager
-                print(f"[UnifiedMCP] 成功连接本地工具服务器: {tools_script}")
-            else:
-                print("[UnifiedMCP] 未找到 local_tools_server.py 路径，跳过连接")
-        except Exception as e:
-            print(f"[UnifiedMCP] 连接本地工具服务器失败: {e}")
+        local_alive = False
+        if "local_tools" in self.managers:
+            try:
+                local_alive = await self.managers["local_tools"].is_alive()
+            except Exception:
+                pass
+                
+        if not local_alive:
+            stdio_manager = StdioConnectionManager()
+            try:
+                python_exe = sys.executable
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                possible_paths = [
+                    os.path.join(current_dir, "..", "local_tools_server.py"),
+                    os.path.join(current_dir, "local_tools_server.py"),
+                    os.path.join(os.getcwd(), "integrations", "local_tools_server.py"),
+                    os.path.join(os.getcwd(), "local_tools_server.py"),
+                ]
+                tools_script = next((p for p in possible_paths if os.path.exists(p)), None)
+                if tools_script:
+                    await stdio_manager.connect(python_exe, [tools_script])
+                    self.managers["local_tools"] = stdio_manager
+                    print(f"[UnifiedMCP] 成功连接本地工具服务器: {tools_script}")
+                else:
+                    print("[UnifiedMCP] 未找到 local_tools_server.py 路径，跳过连接")
+            except Exception as e:
+                print(f"[UnifiedMCP] 连接本地工具服务器失败: {e}")
 
         # 3. 连接 CAE 材料数据库 (Stdio)
-        material_manager = StdioConnectionManager()
-        try:
-            python_exe = sys.executable
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            possible_material_paths = [
-                os.path.join(current_dir, "server_entry.py"),
-                os.path.join(current_dir, "integrations", "mcp_client", "server_entry.py"),
-                os.path.join(os.getcwd(), "integrations", "mcp_client", "server_entry.py"),
-                os.path.join(os.getcwd(), "mcp_client", "server_entry.py"),
-            ]
-            material_script = next((p for p in possible_material_paths if os.path.exists(p)), None)
-            if material_script:
-                await material_manager.connect(python_exe, [material_script])
-                self.managers["material_db"] = material_manager
-                print(f"[UnifiedMCP] 成功连接材料数据库服务器: {material_script}")
-            else:
-                print("[UnifiedMCP] 未找到 server_entry.py 路径，跳过连接")
-        except Exception as e:
-            print(f"[UnifiedMCP] 连接材料数据库服务器失败: {e}")
+        material_alive = False
+        if "material_db" in self.managers:
+            try:
+                material_alive = await self.managers["material_db"].is_alive()
+            except Exception:
+                pass
+                
+        if not material_alive:
+            material_manager = StdioConnectionManager()
+            try:
+                python_exe = sys.executable
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                possible_material_paths = [
+                    os.path.join(current_dir, "server_entry.py"),
+                    os.path.join(current_dir, "integrations", "mcp_client", "server_entry.py"),
+                    os.path.join(os.getcwd(), "integrations", "mcp_client", "server_entry.py"),
+                    os.path.join(os.getcwd(), "mcp_client", "server_entry.py"),
+                ]
+                material_script = next((p for p in possible_material_paths if os.path.exists(p)), None)
+                if material_script:
+                    await material_manager.connect(python_exe, [material_script])
+                    self.managers["material_db"] = material_manager
+                    print(f"[UnifiedMCP] 成功连接材料数据库服务器: {material_script}")
+                else:
+                    print("[UnifiedMCP] 未找到 server_entry.py 路径，跳过连接")
+            except Exception as e:
+                print(f"[UnifiedMCP] 连接材料数据库服务器失败: {e}")
 
     async def get_all_tools(self) -> list[StructuredTool]:
         all_tools = []
