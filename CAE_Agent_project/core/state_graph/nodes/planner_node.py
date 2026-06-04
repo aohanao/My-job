@@ -4,6 +4,7 @@ import time
 from core.state_graph.state import CAEAgentState
 from core.state_graph.node_utils import get_memory_window, create_llm
 from core import config
+from core.skills import load_skills
 
 # 使用公共 LLM 工厂
 llm = create_llm(model=config.PLANNER_MODEL, temperature=0.1)
@@ -35,16 +36,21 @@ def planner_node(state: CAEAgentState, tools=None):
         print("[Planner] ✨ 潜意识唤醒：发现该工程过去曾有成功运行经验...")
         exp_injection = f"\n【跨项目全局历史经验唤醒】\n系统回忆起之前在处理类似这句需求时，有过这样一次完美的仿真全链路经验：\n{historical_exp}\n这仅仅是参考，用来帮助您在与用户聊天（chat模式）时，如有必要可以推荐这些历史上已成功的经验参数给当前用户参考。"
 
+    # 动态加载技能
+    skills = load_skills()
+    skills_instruction = ""
+    for idx, (s_id, s_info) in enumerate(skills.items(), 1):
+        triggers = ", ".join(s_info["trigger_conditions"])
+        skills_instruction += f"    {idx}. {s_id}: {s_info['name']}。描述：{s_info['description']}。触发词：[{triggers}]\n"
+
     system_prompt = f"""
     你是一个资深的 CAE 仿真平台总指挥官。
     你需要判断用户的意图，将用户的需求分类到支持的技能库中。
     参考之前的对话历史来判断当前的真实意图。
     {short_term_injection}
     
-    目前系统仅支持以下两种仿真类型：
-    1. bullet_impact: 子弹冲击钢板相关的显式动力学仿真。
-    2. tunnel_support: 隧道开挖与支护（如围岩等级、支护厚度等）相关的仿真。
-    如果超出范围，则 intent 为 'unsupported'。意图如果没有明显倾向可以填 'unsupported'。
+    目前系统支持的仿真类型如下：
+{skills_instruction}    如果超出范围，则 intent 为 'unsupported'。意图如果没有明显倾向可以填 'unsupported'。
 
     【核心判别标准】
     动作类型 (action_type) 分为两类：
@@ -60,7 +66,7 @@ def planner_node(state: CAEAgentState, tools=None):
         "properties": {
             "intent": {
                 "type": "string",
-                "enum": ["bullet_impact", "tunnel_support", "unsupported"],
+                "enum": list(skills.keys()) + ["unsupported"],
                 "description": "用户的仿真意图归类。"
             },
             "action_type": {

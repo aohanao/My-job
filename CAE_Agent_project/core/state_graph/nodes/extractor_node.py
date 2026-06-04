@@ -56,13 +56,13 @@ async def extractor_node(state: SimPipelineState, tools=None):
             print(f"\n[Extractor] ❌ 无法加载 Schema: {e}")
             return {"param_errors": f"Schema加载失败: {e}"}
 
-        # 2. 读取技能专属的提示词指令
-        try:
-            instruction_path = os.path.join(skill_dir, "references", "prompt_instruction.md")
-            with open(instruction_path, "r", encoding="utf-8") as f:
-                template_str = f.read()
-        except FileNotFoundError:
-            return {"param_errors": f"技能指令文件丢失"}
+        # 2. 从技能定义中读取提示词指令
+        from core.skills import get_skill
+        skill_info = get_skill(current_skill)
+        if not skill_info:
+            return {"param_errors": f"未找到技能 {current_skill} 的定义文件"}
+        
+        template_str = skill_info["prompt_instruction"]
 
         # 3. 组装 System Prompt
         prompt_engine = PromptTemplate(
