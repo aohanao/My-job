@@ -104,7 +104,7 @@ async def run_agent_loop(memory, rag_tools, thread_config, session_name, mcp_man
             }
 
             try:
-                async for chunk in app.astream(initial_input, config=thread_config):
+                async for chunk in app.astream(initial_input, config=run_config):
                     for node_name, output in chunk.items():
                         print(f"[Run] [{node_name}] 处理中...")
                         
