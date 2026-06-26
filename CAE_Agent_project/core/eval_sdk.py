@@ -115,6 +115,8 @@ class EvalPlatformCallback(BaseCallbackHandler):
         self._root_run_id: Optional[UUID] = None  # 标识顶层 Chain
         self._total_tokens: int = 0
         self._final_response: str = ""
+        # ---- 🌟 RAGAS 自动触发标志：本次 Trace 中是否调用了 RAG 工具 ----
+        self._rag_tool_used: bool = False
 
         # ---- Span 元数据暂存 (在 start 时捕获，在 end 时消费) ----
         # { run_id: {"name": ..., "type": ..., "start_time": ..., "input_data": ...} }
@@ -286,6 +288,10 @@ class EvalPlatformCallback(BaseCallbackHandler):
         parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
+        # 🌟 RAGAS 自动触发：一旦 RAG 知识检索工具被调用即标记，Trace 结束时自动触发评测
+        meta = self._span_meta.get(run_id)
+        if meta and meta.get("name") == "lookup_cae_knowledge":
+            self._rag_tool_used = True
         self._report_span(run_id, output)
 
     def on_tool_error(
@@ -416,6 +422,8 @@ class EvalPlatformCallback(BaseCallbackHandler):
 
     def _end_trace(self, success: bool = True):
         """结束当前 Trace 并重置状态（支持实例复用）"""
+        rag_used = self._rag_tool_used  # 先缓存标志，重置前读取
+
         if self._trace_id:
             self._post("/traces/end", {
                 "trace_id": self._trace_id,
@@ -424,11 +432,26 @@ class EvalPlatformCallback(BaseCallbackHandler):
                 "total_tokens": self._total_tokens,
             })
 
+        # 🌟 RAGAS 自动评测：本次对话使用了 RAG 工具，Trace 结束后自动触发评测（非阻塞）
+        if rag_used:
+            import threading
+            import httpx
+            ragas_trigger_url = f"{self.server_url}/api/evaluate/ragas"
+            def _trigger_ragas():
+                try:
+                    with httpx.Client(timeout=5.0) as c:
+                        c.post(ragas_trigger_url)
+                    logger.info("[EvalSDK] ✅ 检测到 RAG 工具调用，已自动触发 RAGAS 评测")
+                except Exception as e:
+                    logger.warning(f"[EvalSDK] 自动触发 RAGAS 评测失败（不影响主流程）: {e}")
+            threading.Thread(target=_trigger_ragas, daemon=True).start()
+
         # 重置全部状态
         self._trace_id = None
         self._root_run_id = None
         self._total_tokens = 0
         self._final_response = ""
+        self._rag_tool_used = False
         self._span_meta.clear()
 
     def __del__(self):

@@ -96,12 +96,32 @@ graph TD
 *   **Transport (传输)**：采用 **stdio 传输机制**。这允许 Agent 以子进程形式拉起 MCP Server，实现真正的进程级隔离，增强了系统的安全性。
 *   **FastMCP 框架**：利用 `FastMCP` 快速封装本地 JSON 材料数据库，使其具备“零配置”暴露至外部 Agent 的能力。
 
-### 3.3 生产化与 FastAPI 集成路径
+### 3.3 测试驱动智能体开发 (TDD-Agent & Simulation-TDD)
+为了杜绝 LLM 代码生成的盲目性，我们在 `Critic` 节点中实现了一套基于测试驱动开发 (TDD) 的断言约束引擎：
+- **阶段 1：参数设计规范断言 (TDD Parameter Assertions)**
+  - 智能体提取出参数后，`CriticParams` 节点加载对应技能下的 `tdd_test.py` 中的 `test_parameters` 进行工程设计限制断言校验（如抗穿透最小允许钢板厚度、材料极限刚度等）。
+- **阶段 2：仿真算法及本构结构断言 (TDD Code Assertions)**
+  - 脚本渲染完成后，`CriticCode` 节点加载 `test_code_structure` 断言生成的 Abaqus Python 代码是否满足特定的物理模拟规范（如采用三维积分减缩单元 `C3D8R`、岩土开挖本构是否包含塑性 `Mohr-Coulomb` 等），如果不满足，立即红灯打回并反馈详细 AssertionError 详情。
+- **阶段 3：仿真后处理数值物理红线断言 (TDD Result Assertions)**
+  - 仿真算完后，`CriticResult` 节点通过 `test_results` 解析仿真输出，对沙hourglass能占比、拱顶下沉绝对值等物理安全指标进行物理红线断言，构成完整的 “红灯报错 ➡️ 反馈修改 ➡️ 绿灯通过” 的闭环演进。
+
+### 3.4 仿真技能自动沉淀封装引擎 (Autonomous Skill Harvester)
+为了解决仿真技能冷启动与人工维护成本高的痛点，系统集成了基于 TDD-QA 的**自主技能沉淀封装引擎**：
+- **概念模型**：当 CAE 工程师在物理机或本地跑通了一个新的仿真任务脚本并获得预期结果后，只需将此 Python 脚本及描述发送给沉淀智能体，即可实现零代码封装。
+- **动态参数化与生成**：
+  1. `SkillHarvester` 调用大模型，将 Python 脚本中的硬编码物理数值提炼并替换为 Jinja2 模板占位符（生成 `abaqus_macro.jinja2`）。
+  2. 自动生成对应的 `schema.py` (Pydantic 骨架结构)、`validator.py` (边界限制校验) 以及 `skill.md` (元数据及 Few-Shot 示例)。
+- **TDD-QA 虚拟闭环校验 (Self-Validation)**：
+  - 在写入系统 `skills/` 目录前，沉淀引擎会生成对应的 `tdd_test.py` 并开辟临时环境。
+  - 自动渲染 Jinja 模板并使用 `sample_params` 运行 TDD 断言。若出现任何语法、结构或边界异常，抛出错误打回 LLM 进行自愈优化，直到全绿灯（Green）通过。
+  - 最终，自动刷写磁盘并将新 Skill 挂载至全局缓存，实现仿真智能体技能库的“自动繁殖”与横向扩展。
+
+### 3.5 生产化与 FastAPI 集成路径
 当前的 `main.py` 是轻量级 CLI 原型，但架构上已完全 **API-Ready**：
 - **无状态逻辑**：所有状态均存储在 `thread_id` 对应的感知层，底层计算节点是无状态的。
 - **迁移方案**：只需引入 `FastAPI` 路由，将 `thread_id` 作为 Request Header，并调用 `app.stream()`。每一个 HTTP 请求都将转化为工作流的一次状态转移增量，从而实现从单机脚本到微服务集群的跨越。
 
-### 3.4 动态工具执行循环 (Tool Loop) 机制
+### 3.6 动态工具执行循环 (Tool Loop) 机制
 在 `ChatNode` 中，系统实现了一套自动化的“思考-行动-观察”循环 (ReAct 简化版)：
 - **多工具聚合**：动态合并本地材料库工具与 MCP 远程 RAG 工具，形成统一工具空间。
 - **多轮检索能力**：支持单次任务中的多次工具调用（上限 3 次），允许 Agent 在回答前多次回退检索以校对数据准确性。
@@ -118,7 +138,10 @@ graph TD
 CAE_Agent_project/
 ├── core/                   # 🧠 核心引擎层 (Brain & Logic)
 │   ├── memory/             # 长期/短期记忆管理
-│   ├── state_graph/        # 状态机编排 (Nodes, State, Builder)
+│   ├── state_graph/        # 状态机编排 (Nodes, State, cae_agent, sim_pipeline)
+│   │   └── nodes/
+│   │       └── critic_agent.py # 集中式评判智能体 (CriticAgent)
+│   ├── skill_harvester.py  # 🚀 TDD-QA 技能自动沉淀与封装中枢
 │   └── config.py           # 全局单一事实来源 (SSOT) 配置
 ├── skills/                 # 🛠️ 技能插件层 (Federalized Skills)
 │   ├── tunnel_support/     # 隧道工程场景插件
@@ -128,21 +151,20 @@ CAE_Agent_project/
 │   ├── mcp_client/         # RAG 知识库 MCP 联动
 │   └── cae_host_bridge/    # 宿主机 Abaqus 网关
 ├── web/                    # 🌐 交互展示层 (Web Console)
-│   ├── app.py              # Streamlit 监控仪表盘 (原前端)
-│   ├── app_server.py       # FastAPI 智能体座舱后端 (新前端提供 WebSocket 对话)
+│   ├── app_server.py       # FastAPI 智能体座舱后端 (提供 WebSocket /api/harvest_skill 接口)
 │   └── static/
 │       └── index.html      # 🆕 新版赛博朋克极光暗黑风智能体仿真座舱页面 (HTML+CSS+Vue.js)
 ├── main.py                 # CLI 终端执行入口
-└── tracer.py               # 全链路监控探针 (Tracing)
 ```
 
 | 核心模块 | 设计意图 (Design Intent) | 技术选型与进化 |
 | :--- | :--- | :--- |
 | `core/config.py` | **单一事实来源 (SSOT)** | 支持动态路径识别，解耦环境配置，适配云端/本地异构环境。 |
 | `core/state.py` | **结构化状态快照** | 二元并行状态。消息流负责对话，业务逻辑流负责工程参数下发。 |
-| `extractor_node.py`| **动态 Schema 注入** | 不再硬编码提取逻辑，而是根据 `skills` 目录动态加载 Pydantic 结构。 |
-| `critic_node.py` | **插件化校验 (Plugin)** | 通过 `importlib` 按需加载对应技能文件夹下的 `validator.py`。 |
-| `executor_node.py` | **沙箱化隔离执行** | 结合宿主机桥接工具，实现 CAE 报错与 Agent 系统的故障隔离。 |
+| `extractor_node.py`| **动态 Schema 注入** | 根据 `skills` 目录动态加载 Pydantic 结构进行参数提取。已完全与校验逻辑解耦。 |
+| `critic_agent.py` | **集中式评判智能体 (CriticAgent)** | 统一接管物理/工程参数校验、生成的脚本代码质量校验，以及仿真计算结果评估，维护长期经验库的正负反馈。 |
+| `skill_harvester.py` | **TDD-QA 技能自沉淀封装** | **[New]** 接收运行成功的 Python 脚本，自适应参数化并编写 TDD 测试与校验代码，实现技能库自繁殖。 |
+| `executor_node.py` | **沙箱化隔离执行** | 呼叫物理机 CAE 宏执行网桥并传回结果。已完全与校验/评价逻辑解耦。 |
 | `skills/` | **水平扩展能力** | 新增仿真场景只需增加文件夹，符合 **Open-Closed Principle**。 |
 
 ---
@@ -150,20 +172,20 @@ CAE_Agent_project/
 ## 5. STAR 技术总结 (高级/资深架构师版)
 
 ### **Situation (背景)**
-CAE 仿真交付场景下，参数链条长且物理耦合度极高。传统的 LLM 方案经常生成语法正确但物理上“发散”的脚本，导致仿真成功率不足 30%。
+CAE 仿真交付场景下，参数链条长且物理耦合度极高。传统的 LLM 方案经常生成语法正确但物理上“发散”的脚本，导致仿真成功率不足 30%。同时，手工开发新的仿真垂直技能周期漫长。
 
 ### **Task (目标)**
-构建一套具备工程决策能力的 Agent 架构，要求能够自动识别复杂意图、检索工程手册、执行物理合法性校验，并闭合 Abaqus 工业软件的运行环路。
+构建一套具备工程决策与自适应进化的 Agent 架构，不仅要求能够自动识别复杂意图、执行物理规则与代码质量校验，还需支持**将人类跑通的新仿真业务脚本自动化沉淀为智能体的即插即用 Skill 插件**。
 
 ### **Action (行动)**
 1.  **Orchestration**: 基于 **LangGraph** 实现了一个带有 Reflexion 机制的工作流，引入了基于 `Thread-safe` 的状态管理。
-2.  **Tooling**: 实现了基于 **MCP (Model Context Protocol)** 的材料数据库检索工具，通过 Provider 模式实现了工具的高内聚低耦合。
-3.  **Validation**: 设计了动态验证器加载机制，在 Coder 生成代码后进行强物理约束校验，失败则触发 `Self-Correction` 逻辑。
+2.  **TDD-QA Engine**: 设计并嵌入了三阶段物理/数值 TDD 断言测试套件，在仿真前/中/后全程卡死工程质量红线。
+3.  **Skill Harvester**: 开发了 `skill_harvester` 模块与 `/api/harvest_skill` 接口，利用 LLM 进行参数化与骨架反向映射，配合本地 TDD-QA 沙箱进行代码自验证。
 4.  **Resilience**: 实现了基于子进程的仿真沙箱，集成了日志切片感知技术，能够实时捕获 Abaqus 内部的 `Traceback` 并回传给模型。
 
 ### **Result (结果)**
 - **闭环率**: 复杂仿真场景下的“参数提取-脚本生成-验证-运行”闭环成功率提高至 85% 以上。
-- **扩展性**: 新增一个仿真技能（Skill）的研发周期从“天”级别缩短至“小时”级别。
+- **扩展性**: 实现了 Skill 库的自生殖，新增一个仿真技能（Skill）的研发周期从“天”级别缩短至“1分钟内”（全自动参数化、测试编写与注册）。
 - **工业级应用潜力**: 架构层面实现了对话历史持久化与 API 化的路径设计，具备向 Web 服务迁移的技术冗余。
 
 ---

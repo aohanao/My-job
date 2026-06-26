@@ -17,6 +17,7 @@ CAE_Eval_Platform/
 ├── eval_sdk.py           # 🆕 通用零侵入回调探针（LangChain Callback，即插即用）
 ├── evaluator.py          # LLM-as-a-Judge 意图/工具评估引擎
 ├── ragas_evaluator.py    # RAGAS 框架 RAG 质量评估引擎
+├── healing_agent.py      # 🆕 AI 报错诊断与闭环自愈智能体 (RCA+自愈执行沙箱)
 ├── dashboard.py          # Streamlit 可视化监控大盘 (旧版/备用)
 ├── reset_eval.py         # 评估数据重置工具
 ├── requirements.txt      # Python 依赖清单
@@ -388,9 +389,25 @@ agent.invoke(
 | `_report_span(run_id, output)` | 从暂存区取出元数据，组装完整 Span 并 POST 上报 |
 | `_end_trace(success)` | 结束 Trace 并重置状态，支持实例复用 |
 
+### 8. `healing_agent.py` — AI 报错诊断与闭环自愈智能体
+
+| 属性 | 说明 |
+|:---|:---|
+| **职责** | ① 定位报错轨迹的根因（RCA）；② 自动生成修复后代码与方案；③ 在轻量沙箱与 LLM 仿真中执行修复验证，自动实现闭环自愈 |
+| **行数** | 220 行 |
+| **依赖** | `langchain-openai`、`db_models`、`eval_config` |
+
+**核心逻辑：**
+
+1. **一键智能诊断 (RCA)**：提取报错 Trace 及所有 Trace Spans，将异常节点的 input_data、output_data 以及 `error_msg` 拼接为错误上下文，传入诊断裁判大模型，生成根因分析、修复步骤、修复代码，并持久化到 `healing_report` 表中。
+2. **闭环自愈执行 (Heal)**：
+   - **静态执行沙箱**：若方案为 Python 代码，启动隔离上下文对语法和基础逻辑进行本地 exec 校验，拦截显式漏洞。
+   - **CAE 仿真模拟器**：调用 LLM 仿真执行器模拟 CAE 仿真环境下的重新运行，在没有硬件依赖的情况下产生修复后的最终正确输出。
+   - **状态自愈更新**：运行成功后，将 `healing_report` 的执行状态更新为 `SUCCESS`，并将原本的 Trace 状态 `success_flag` 修改为 `2`（已自愈成功），原输出自动替换为修复后的数据，从数据层面彻底闭环。
+
 ---
 
-### 8. `reset_eval.py` — 评估数据重置工具
+### 9. `reset_eval.py` — 评估数据重置工具
 
 | 属性 | 说明 |
 |:---|:---|
@@ -412,13 +429,14 @@ agent.invoke(
 erDiagram
     run_trace ||--o{ trace_span : "1:N 包含"
     run_trace ||--o{ eval_score : "1:N 评估"
+    run_trace ||--o{ healing_report : "1:N 诊断自愈"
 
     run_trace {
         TEXT trace_id PK "UUID 主键"
         TEXT session_id "会话 ID"
         REAL timestamp "创建时间戳"
         INTEGER total_tokens "本次消耗 Token"
-        BOOLEAN success_flag "是否成功"
+        BOOLEAN success_flag "是否成功(0:失败, 1:成功, 2:自愈成功)"
         TEXT user_query "用户原始问题"
         TEXT final_response "最终输出"
     }
@@ -444,6 +462,18 @@ erDiagram
         TEXT reason "评分理由"
         REAL timestamp "评估时间"
     }
+
+    healing_report {
+        TEXT healing_id PK "UUID 主键"
+        TEXT trace_id FK "关联 Trace"
+        TEXT diagnostic_summary "根因诊断分析 (RCA)"
+        TEXT suggested_fix "修复方案建议"
+        TEXT fixed_code "修复后的代码/参数"
+        TEXT execution_status "自愈执行状态 (SUCCESS/FAILED/PENDING/RUNNING)"
+        TEXT fixed_output "自愈重运行的输出结果"
+        TEXT error_msg "执行日志/错误日志"
+        REAL timestamp "时间戳"
+    }
 ```
 
 ---
@@ -462,6 +492,11 @@ erDiagram
 ### 3. 工程化可靠性保障 (Reliability)
 - **自动熔断策略**：探针 SDK 具备超长 Payload (5k+ 字符) 自动截断保护，防止由于 RAG 召回文本过大撑爆监控 API。
 - **静默降级逻辑**：`eval_sdk.py` 内置 `silent=True` 模式，网络波动时仅记录 Warning 日志，确保可观测性逻辑绝不干扰 Agent 的主业务流程。
+
+### 4. 报错自动根因诊断与闭环自愈 (Closed-Loop Self-Healing)
+- **多维度根因分析 (RCA)**：系统自动捕捉运行轨迹中 status='ERROR' 的 Span 及 `error_msg`，调用诊断 Agent 对输入参数、代码和依赖进行全量审计，精确定位报错原因并产出文字与代码级修复方案。
+- **沙盒与模拟双轨验证**：提供一键闭环自愈功能。支持在轻量级测试沙箱中执行语法逻辑验证，同时通过 CAE 仿真模拟器模拟修正后的实际仿真响应。
+- **状态全自动恢复**：自愈验证成功后，将 Trace 的 `success_flag` 从原本的 FAILED (0) 修正为 HEALED (2)，并将闭环修复后的最终响应反馈写入，直接恢复指标健康度。
 
 ---
 

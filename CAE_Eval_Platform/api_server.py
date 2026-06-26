@@ -8,6 +8,7 @@ import db_models
 import os
 import sqlite3
 import json
+import threading
 import eval_config
 
 app = FastAPI(title="CAE Eval Platform API", description="接收 Agent 运行状态并持久化至 SQLite")
@@ -127,8 +128,8 @@ async def get_stats():
                 "avg_answer_relevancy": 0.0
             }
         
-        # 2. 任务闭环成功率
-        cursor.execute("SELECT COUNT(*) FROM run_trace WHERE success_flag = 1")
+        # 2. 任务闭环成功率 (包含原始成功和自愈成功)
+        cursor.execute("SELECT COUNT(*) FROM run_trace WHERE success_flag IN (1, 2)")
         success_runs = cursor.fetchone()[0]
         success_rate = round((success_runs / total_runs) * 100, 1)
         
@@ -207,7 +208,7 @@ async def get_traces():
                 "session_id": row["session_id"],
                 "timestamp": row["timestamp"],
                 "total_tokens": row["total_tokens"],
-                "success_flag": bool(row["success_flag"]) if row["success_flag"] is not None else False,
+                "success_flag": row["success_flag"] if row["success_flag"] is not None else 0,
                 "user_query": row["user_query"],
                 "final_response": row["final_response"],
                 "latency": round(row["latency"], 2),
@@ -252,7 +253,7 @@ async def get_trace_detail(trace_id: str):
             "session_id": trace_row["session_id"],
             "timestamp": trace_row["timestamp"],
             "total_tokens": trace_row["total_tokens"],
-            "success_flag": bool(trace_row["success_flag"]) if trace_row["success_flag"] is not None else False,
+            "success_flag": trace_row["success_flag"] if trace_row["success_flag"] is not None else 0,
             "user_query": trace_row["user_query"],
             "final_response": trace_row["final_response"],
             "latency": round(trace_row["latency"], 2)
@@ -306,6 +307,221 @@ async def get_trace_detail(trace_id: str):
         }
     except HTTPException as he:
         raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# 🎛️ 评估触发接口 (Evaluation Trigger)
+# ==========================================
+
+def _bg_rule():
+    try:
+        from evaluator import run_rule_based_evaluation
+        run_rule_based_evaluation()
+    except Exception as e:
+        print(f"[BG] 规则打分异常: {e}")
+
+def _bg_llm():
+    try:
+        from evaluator import run_llm_evaluation
+        run_llm_evaluation()
+    except Exception as e:
+        print(f"[BG] LLM打分异常: {e}")
+
+def _bg_ragas():
+    try:
+        from ragas_evaluator import execute_ragas
+        execute_ragas()
+    except Exception as e:
+        print(f"[BG] RAGAS打分异常: {e}")
+
+@app.post("/api/evaluate/rule")
+async def trigger_rule_eval():
+    """触发规则打分流水线（后台异步运行，秒级完成）"""
+    threading.Thread(target=_bg_rule, daemon=True).start()
+    return {"status": "started", "message": "规则打分已在后台启动"}
+
+@app.post("/api/evaluate/llm")
+async def trigger_llm_eval():
+    """触发 LLM 多维打分流水线（后台异步运行）"""
+    threading.Thread(target=_bg_llm, daemon=True).start()
+    return {"status": "started", "message": "LLM 多维打分已在后台启动"}
+
+@app.post("/api/evaluate/ragas")
+async def trigger_ragas_eval():
+    """触发 RAGAS 打分流水线（后台异步运行）"""
+    threading.Thread(target=_bg_ragas, daemon=True).start()
+    return {"status": "started", "message": "RAGAS 打分已在后台启动"}
+
+@app.post("/api/evaluate/all")
+async def trigger_all_eval():
+    """一键触发全量评估：规则 → LLM → RAGAS（后台异步串行）"""
+    def _run_all():
+        _bg_rule()
+        _bg_llm()
+        _bg_ragas()
+    threading.Thread(target=_run_all, daemon=True).start()
+    return {"status": "started", "message": "全量评估已在后台启动"}
+
+
+# ==========================================
+# 📊 评分数据查询接口 (Eval Score Query)
+# ==========================================
+
+@app.get("/api/eval/scores")
+async def get_eval_scores():
+    """返回所有维度的平均评分汇总"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT metric_name, AVG(score) as avg_score, COUNT(*) as count
+            FROM eval_score
+            GROUP BY metric_name
+            ORDER BY metric_name
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                "metric_name": r["metric_name"],
+                "avg_score": round(r["avg_score"], 3) if r["avg_score"] is not None else None,
+                "count": r["count"]
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/eval/scores/{trace_id}")
+async def get_eval_scores_for_trace(trace_id: str):
+    """返回指定 Trace 的所有维度评分（含原因）"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT metric_name, score, reason, timestamp FROM eval_score WHERE trace_id = ? ORDER BY timestamp DESC",
+            (trace_id,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {"metric_name": r["metric_name"], "score": r["score"], "reason": r["reason"], "timestamp": r["timestamp"]}
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/eval/history")
+async def get_eval_history():
+    """返回综合评分趋势数据（llm_composite + ragas），用于趋势图"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT e.trace_id, e.metric_name, e.score, e.timestamp, t.user_query
+            FROM eval_score e
+            JOIN run_trace t ON e.trace_id = t.trace_id
+            WHERE e.metric_name IN ('llm_composite', 'ragas_faithfulness', 'ragas_answer_relevancy')
+            ORDER BY e.timestamp ASC
+            LIMIT 100
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {"trace_id": r["trace_id"], "metric_name": r["metric_name"],
+             "score": r["score"], "timestamp": r["timestamp"], "user_query": r["user_query"]}
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/eval/human")
+async def get_human_reviews():
+    """返回所有人工评审记录"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT h.*, t.user_query
+            FROM human_review h
+            JOIN run_trace t ON h.trace_id = t.trace_id
+            ORDER BY h.timestamp DESC
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                "review_id": r["review_id"], "trace_id": r["trace_id"],
+                "reviewer": r["reviewer"],
+                "intent_score": r["intent_score"], "solution_score": r["solution_score"],
+                "safety_score": r["safety_score"], "overall_score": r["overall_score"],
+                "comment": r["comment"], "timestamp": r["timestamp"],
+                "user_query": r["user_query"]
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# 🤖 智能自愈与诊断接口 (Self-Healing API)
+# ==========================================
+
+@app.get("/api/traces/{trace_id}/healing")
+async def get_healing_report(trace_id: str):
+    """查询指定 Trace 的最新自愈报告"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM healing_report WHERE trace_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (trace_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return {"has_report": False}
+            
+        return {
+            "has_report": True,
+            "healing_id": row["healing_id"],
+            "trace_id": row["trace_id"],
+            "diagnostic_summary": row["diagnostic_summary"],
+            "suggested_fix": row["suggested_fix"],
+            "fixed_code": row["fixed_code"],
+            "execution_status": row["execution_status"],
+            "fixed_output": row["fixed_output"],
+            "error_msg": row["error_msg"],
+            "timestamp": row["timestamp"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/traces/{trace_id}/diagnose")
+async def trigger_diagnose(trace_id: str):
+    """触发报错 Trace 的智能根因诊断 (RCA)"""
+    try:
+        import healing_agent
+        result = healing_agent.run_diagnose(trace_id)
+        if not result:
+            raise HTTPException(status_code=500, detail="诊断生成失败")
+        return {"status": "ok", "report": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/traces/{trace_id}/heal")
+async def trigger_healing(trace_id: str):
+    """一键触发报错自愈与修复重新执行流程"""
+    try:
+        import healing_agent
+        result = healing_agent.execute_self_healing(trace_id)
+        return {"status": "ok", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -24,7 +24,7 @@ persist_directory = os.path.join(PROJECT_ROOT, "data/chroma_db")
 
 chunk_size = 1000
 chunk_overlap = 100
-separators = ["\n\n", "\n", " ", ".", "。", "!", "！", "?", "？", "\n$$\n", "$$"]
+separators = ["\n$$\n", "$$", "\n\n", "\n", "。", ".", "！", "!", "？", "?", " "]
 
 max_spliter_char_number = 1000
 similarity_threshold = 2

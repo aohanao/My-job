@@ -20,6 +20,20 @@ def route_after_planner(state):
     return "SimPipeline"
 
 
+def route_after_planner_agent(state):
+    """PlannerAgent 之后的二分叉路由
+
+    Returns:
+        'End'         — action_type 为 error 或 chat（已在节点内部完成对话）
+        'SimPipeline' — action_type 为 simulate（启动仿真）
+    """
+    action = state.get("action_type")
+    if action == "simulate":
+        return "SimPipeline"
+    return "End"
+
+
+
 def route_after_extractor(state):
     """Extractor 之后的路由 — 支持 Reflexion 自愈与人机交互"""
     errors = state.get("param_errors")

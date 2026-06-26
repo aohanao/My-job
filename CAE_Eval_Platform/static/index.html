@@ -299,8 +299,10 @@
                                 ID: {{ trace.trace_id.substring(0, 8) }}...
                             </span>
                             <span :class="['px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-wide', 
-                                          trace.success_flag ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400']">
-                                {{ trace.success_flag ? 'SUCCESS' : 'FAILED' }}
+                                          trace.success_flag === 1 ? 'bg-emerald-500/10 text-emerald-400' : 
+                                          trace.success_flag === 2 ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30' : 
+                                          'bg-red-500/10 text-red-400']">
+                                {{ trace.success_flag === 1 ? 'SUCCESS' : trace.success_flag === 2 ? 'HEALED' : 'FAILED' }}
                             </span>
                         </div>
                         
@@ -438,6 +440,107 @@
             </div>
         </section>
 
+        <!-- 🤖 AI 智能自愈与报错纠错中心 -->
+        <section v-if="selectedTraceId && (currentTraceDetail.trace?.success_flag === 0 || currentTraceDetail.trace?.success_flag === 2)" 
+                 class="glass-card rounded-2xl p-5 border border-red-500/15" 
+                 :class="{'border-indigo-500/20': currentTraceDetail.trace?.success_flag === 2}">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-bold text-slate-300 flex items-center gap-2">
+                    <i data-lucide="shield-alert" class="w-4 h-4 text-pink-500" v-if="currentTraceDetail.trace?.success_flag === 0"></i>
+                    <i data-lucide="shield-check" class="w-4 h-4 text-indigo-400" v-else></i>
+                    AI 智能自愈与报错纠错舱 (Closed-Loop Self-Healing)
+                </h3>
+                <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide border',
+                              currentTraceDetail.trace?.success_flag === 2 ? 'bg-indigo-950/40 text-indigo-300 border-indigo-500/30' : 'bg-red-950/40 text-red-400 border-red-500/30']">
+                    {{ currentTraceDetail.trace?.success_flag === 2 ? '已自愈成功 (HEALED)' : '运行报错待自愈 (FAILED)' }}
+                </span>
+            </div>
+
+            <!-- 未诊断时且未自愈 -->
+            <div v-if="!healingReport.has_report && !healingLoading" class="flex flex-col items-center justify-center py-6 text-center">
+                <p class="text-xs text-slate-400 max-w-md mb-4">
+                    监测到该 Trace 在执行过程中发生了错误中断。您可以一键触发 AI 自愈智能体，它将深入分析错误根因，生成修复建议与代码，并在执行沙箱中完成闭环纠错运行。
+                </p>
+                <button @click="diagnoseTrace" class="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-xs font-bold rounded-xl transition duration-200 shadow-lg shadow-pink-600/15">
+                    <i data-lucide="wrench" class="w-4 h-4"></i>
+                    一键报错诊断与自愈
+                </button>
+            </div>
+
+            <!-- 加载中 -->
+            <div v-else-if="healingLoading" class="space-y-3 py-4">
+                <div class="flex items-center justify-center gap-3 text-xs text-indigo-300">
+                    <i data-lucide="loader" class="w-5 h-5 animate-spin"></i>
+                    <span>{{ healingMsg || 'AI 正在深入链路诊断错误根因...' }}</span>
+                </div>
+                <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                    <div class="bg-indigo-500 h-full animate-pulse" style="width: 70%"></div>
+                </div>
+            </div>
+
+            <!-- 自愈报告展示 -->
+            <div v-else class="space-y-4">
+                <!-- 根因诊断 (RCA) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 bg-slate-950/60 border border-slate-900 rounded-xl">
+                        <div class="flex items-center gap-1.5 text-xs text-slate-400 font-bold mb-1.5 uppercase">
+                            <i data-lucide="info" class="w-4 h-4 text-amber-400"></i>
+                            错误根因分析 (RCA)
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed font-mono whitespace-pre-line">{{ healingReport.diagnostic_summary }}</p>
+                    </div>
+                    
+                    <div class="p-4 bg-slate-950/60 border border-slate-900 rounded-xl">
+                        <div class="flex items-center gap-1.5 text-xs text-slate-400 font-bold mb-1.5 uppercase">
+                            <i data-lucide="check-square" class="w-4 h-4 text-emerald-400"></i>
+                            AI 修复与纠错方案
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed font-mono whitespace-pre-line">{{ healingReport.suggested_fix }}</p>
+                    </div>
+                </div>
+
+                <!-- 修复后的代码/参数建议 -->
+                <div v-if="healingReport.fixed_code && healingReport.fixed_code !== 'N/A'" class="flex flex-col bg-slate-950/90 border border-slate-900 rounded-xl p-3.5">
+                    <div class="text-xs text-slate-400 mb-2 font-bold flex items-center gap-1.5">
+                        <i data-lucide="code" class="w-4 h-4 text-indigo-400"></i>
+                        修复后的代码 / 修正参数 (Fixed Payload)
+                    </div>
+                    <pre class="text-[10px] text-indigo-300 overflow-auto font-mono max-h-[160px] p-2 bg-black/45 rounded select-all">{{ healingReport.fixed_code }}</pre>
+                </div>
+
+                <!-- 自愈执行进度/日志 -->
+                <div v-if="healingReport.execution_status === 'SUCCESS' || healingReport.execution_status === 'FAILED'" class="p-4 bg-slate-950/60 border border-slate-900 rounded-xl space-y-3">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-slate-400 font-bold flex items-center gap-1.5">
+                            <i data-lucide="activity" class="w-4 h-4 text-emerald-400" v-if="healingReport.execution_status === 'SUCCESS'"></i>
+                            <i data-lucide="alert-triangle" class="w-4 h-4 text-red-400" v-else></i>
+                            自愈沙盒验证日志 (Sandbox Log)
+                        </span>
+                        <span :class="['px-2 py-0.5 rounded text-[10px] font-bold', healingReport.execution_status === 'SUCCESS' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20' : 'bg-red-950/40 text-red-400 border border-red-500/20']">
+                            {{ healingReport.execution_status === 'SUCCESS' ? '验证通过' : '验证失败' }}
+                        </span>
+                    </div>
+                    <pre class="text-[10px] text-slate-400 font-mono bg-black/30 p-2.5 rounded overflow-auto max-h-[100px]">{{ healingReport.error_msg || '自愈执行器：无额外日志。' }}</pre>
+                    
+                    <div v-if="healingReport.execution_status === 'SUCCESS' && healingReport.fixed_output" class="pt-2 border-t border-slate-900/60">
+                        <span class="text-[10px] text-slate-500 font-bold block mb-1">【自愈重运行最终结果输出】</span>
+                        <p class="text-xs text-slate-300 font-mono bg-slate-900/40 p-2 rounded max-h-[120px] overflow-y-auto leading-relaxed">{{ healingReport.fixed_output }}</p>
+                    </div>
+                </div>
+
+                <!-- 待执行自愈按钮 -->
+                <div v-if="healingReport.execution_status === 'PENDING' || healingReport.execution_status === 'RUNNING'" class="flex justify-end gap-3 pt-2">
+                    <button @click="diagnoseTrace" :disabled="healingLoading" class="px-4 py-2 border border-slate-700 text-xs font-semibold rounded-xl text-slate-300 hover:bg-slate-900 transition">
+                        重新诊断
+                    </button>
+                    <button @click="healTrace" :disabled="healingLoading" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-xs font-bold rounded-xl transition duration-200 shadow-lg shadow-indigo-600/15 flex items-center gap-1.5">
+                        <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                        执行一键自愈修复
+                    </button>
+                </div>
+            </div>
+        </section>
+
         <!-- 📃 问题明细与日志审计 -->
         <section class="glass-card rounded-2xl p-5">
             <h3 class="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
@@ -447,20 +550,115 @@
             <div v-if="selectedTraceId && currentTraceDetail.trace" class="space-y-4">
                 <div class="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl">
                     <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">用户提问 (User Query)</span>
-                    <p class="text-sm text-slate-200 mt-1.5 font-medium leading-relaxed">
-                        {{ currentTraceDetail.trace.user_query }}
-                    </p>
+                    <p class="text-sm text-slate-200 mt-1.5 font-medium leading-relaxed">{{ currentTraceDetail.trace.user_query }}</p>
                 </div>
                 <div class="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl">
                     <span class="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">系统响应 (Final Response)</span>
-                    <p class="text-sm text-slate-200 mt-1.5 leading-relaxed whitespace-pre-line font-mono">
-                        {{ currentTraceDetail.trace.final_response || '尚无系统返回响应。' }}
-                    </p>
+                    <p class="text-sm text-slate-200 mt-1.5 leading-relaxed whitespace-pre-line font-mono">{{ currentTraceDetail.trace.final_response || '尚无系统返回响应。' }}</p>
+                </div>
+                <!-- 当前 Trace 的各维度评分 -->
+                <div v-if="traceScores.length > 0" class="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl">
+                    <span class="text-[10px] text-amber-400 font-bold uppercase tracking-wider">本次 Trace 评分明细</span>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <span v-for="s in traceScores" :key="s.metric_name"
+                              class="text-[10px] px-2 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono">
+                            {{ s.metric_name }}: <strong class="text-white">{{ s.score }}</strong>
+                        </span>
+                    </div>
                 </div>
             </div>
-            <div v-else class="text-center py-6 text-xs text-slate-500">
-                请在上方选择一条 Trace 记录以显示最终的文本审计数据
+            <div v-else class="text-center py-6 text-xs text-slate-500">请在上方选择一条 Trace 记录以显示最终的文本审计数据</div>
+        </section>
+
+        <!-- 🎛️ 全自动评估控制台 -->
+        <section class="glass-card rounded-2xl p-5 space-y-5">
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-bold text-slate-300 flex items-center gap-2">
+                    <i data-lucide="sliders" class="w-4 h-4 text-indigo-400"></i>
+                    评估控制台 (Evaluation Control Center)
+                </h3>
+                <span class="text-xs text-slate-500">评估在后台异步运行，完成后刷新大盘即可看到结果</span>
             </div>
+
+            <!-- 触发按钮行 -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <button @click="triggerEval('rule')" :disabled="evalRunning"
+                        class="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold rounded-xl border border-slate-700 transition disabled:opacity-50">
+                    <i data-lucide="ruler" class="w-4 h-4 text-amber-400"></i> 规则打分
+                </button>
+                <button @click="triggerEval('llm')" :disabled="evalRunning"
+                        class="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold rounded-xl border border-slate-700 transition disabled:opacity-50">
+                    <i data-lucide="bot" class="w-4 h-4 text-pink-400"></i> LLM 多维打分
+                </button>
+                <button @click="triggerEval('ragas')" :disabled="evalRunning"
+                        class="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs font-semibold rounded-xl border border-slate-700 transition disabled:opacity-50">
+                    <i data-lucide="dna" class="w-4 h-4 text-emerald-400"></i> RAGAS 打分
+                </button>
+                <button @click="triggerEval('all')" :disabled="evalRunning"
+                        class="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-xs font-semibold rounded-xl border border-indigo-500/40 shadow-lg shadow-indigo-600/20 transition disabled:opacity-50">
+                    <i data-lucide="zap" class="w-4 h-4"></i> 一键全量评估
+                </button>
+            </div>
+
+            <!-- 状态提示 -->
+            <div v-if="evalMsg" class="text-xs text-indigo-300 bg-indigo-950/50 border border-indigo-800/40 rounded-xl px-4 py-2 flex items-center gap-2">
+                <i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> {{ evalMsg }}
+            </div>
+
+            <!-- LLM 多维 KPI 卡片 -->
+            <div v-if="llmAvgScores.length > 0">
+                <p class="text-xs text-slate-400 font-semibold mb-2 uppercase tracking-wider">🤖 LLM 多维平均评分</p>
+                <div class="grid grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div v-for="s in llmAvgScores" :key="s.metric_name"
+                         class="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-center">
+                        <div class="text-[10px] text-slate-400 mb-1">{{ llmLabel(s.metric_name) }}</div>
+                        <div class="text-xl font-extrabold" :class="scoreColor(s.avg_score * 10)">{{ s.avg_score }}</div>
+                        <div class="text-[9px] text-slate-600 mt-0.5">{{ s.count }} 次</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 规则打分列表 -->
+            <div v-if="ruleAvgScores.length > 0">
+                <p class="text-xs text-slate-400 font-semibold mb-2 uppercase tracking-wider">📏 规则客观评分</p>
+                <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div v-for="s in ruleAvgScores" :key="s.metric_name"
+                         class="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-center">
+                        <div class="text-[10px] text-slate-400 mb-1">{{ ruleLabel(s.metric_name) }}</div>
+                        <div class="text-xl font-extrabold" :class="scoreColor(s.avg_score)">{{ s.avg_score }}</div>
+                        <div class="text-[9px] text-slate-600 mt-0.5">/ 10 · {{ s.count }} 次</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 人工评审汇总 -->
+            <div v-if="humanReviews.length > 0">
+                <p class="text-xs text-slate-400 font-semibold mb-2 uppercase tracking-wider">🧑‍⚖️ 人工评审记录</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-[11px] text-slate-300">
+                        <thead>
+                            <tr class="text-slate-500 border-b border-slate-800">
+                                <th class="text-left py-1.5 pr-4">提问</th>
+                                <th class="px-2">意图</th><th class="px-2">方案</th><th class="px-2">安全</th><th class="px-2">综合</th>
+                                <th class="text-left px-2">评语</th><th class="text-left px-2">评审人</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="r in humanReviews" :key="r.review_id" class="border-b border-slate-900 hover:bg-slate-900/30">
+                                <td class="py-1.5 pr-4 max-w-[180px] truncate" :title="r.user_query">{{ r.user_query }}</td>
+                                <td class="text-center px-2" :class="scoreColor(r.intent_score)">{{ r.intent_score ?? '--' }}</td>
+                                <td class="text-center px-2" :class="scoreColor(r.solution_score)">{{ r.solution_score ?? '--' }}</td>
+                                <td class="text-center px-2" :class="scoreColor(r.safety_score)">{{ r.safety_score ?? '--' }}</td>
+                                <td class="text-center px-2 font-bold" :class="scoreColor(r.overall_score)">{{ r.overall_score ?? '--' }}</td>
+                                <td class="px-2 max-w-[160px] truncate text-slate-400" :title="r.comment">{{ r.comment || '-' }}</td>
+                                <td class="px-2 text-slate-500">{{ r.reviewer }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-[10px] text-slate-600 mt-2">💡 命令行运行 <code class="bg-slate-900 px-1 rounded">python human_evaluator.py</code> 进行人工打分</p>
+            </div>
+            <div v-else class="text-xs text-slate-600">暂无人工评审数据。运行 <code class="bg-slate-900 px-1 rounded">python human_evaluator.py</code> 进行人工打分。</div>
         </section>
 
     </div>
@@ -492,7 +690,19 @@
                 const searchQuery = ref('');
                 const loading = ref(false);
                 const statsLoading = ref(false);
-                
+
+                // 评估控制台状态
+                const evalRunning = ref(false);
+                const evalMsg = ref('');
+                const allEvalScores = ref([]);
+                const humanReviews = ref([]);
+                const traceScores = ref([]);
+
+                // 🤖 智能自愈状态与变量
+                const healingReport = ref({ has_report: false });
+                const healingLoading = ref(false);
+                const healingMsg = ref('');
+
                 // 实时更新监听
                 const isAutoRefresh = ref(true);
                 let refreshInterval = null;
@@ -566,10 +776,63 @@
                     }
                 };
 
+                // 拉取自愈报告
+                const fetchHealingReport = async (traceId) => {
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/traces/${traceId}/healing`);
+                        if (res.ok) {
+                            healingReport.value = await res.json();
+                        }
+                    } catch(e) {
+                        console.error("加载自愈报告失败", e);
+                    }
+                };
+
+                // 触发自愈诊断
+                const diagnoseTrace = async () => {
+                    if (!selectedTraceId.value) return;
+                    healingLoading.value = true;
+                    healingMsg.value = 'AI 诊断专家正在深度扫描轨迹与分析错误根因 (RCA)...';
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/traces/${selectedTraceId.value}/diagnose`, { method: 'POST' });
+                        if (res.ok) {
+                            await fetchHealingReport(selectedTraceId.value);
+                            setTimeout(() => { lucide.createIcons(); }, 50);
+                        }
+                    } catch(e) {
+                        console.error("诊断错误", e);
+                    } finally {
+                        healingLoading.value = false;
+                    }
+                };
+
+                // 执行一键自愈重新运行
+                const healTrace = async () => {
+                    if (!selectedTraceId.value) return;
+                    healingLoading.value = true;
+                    healingMsg.value = '自愈执行器正在拉起测试沙箱并仿真执行修复方案...';
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/traces/${selectedTraceId.value}/heal`, { method: 'POST' });
+                        if (res.ok) {
+                            await fetchHealingReport(selectedTraceId.value);
+                            await fetchStats();
+                            await fetchTraces(true);
+                            await fetchTraceDetail(selectedTraceId.value);
+                            setTimeout(() => { lucide.createIcons(); }, 50);
+                        }
+                    } catch(e) {
+                        console.error("自愈运行失败", e);
+                    } finally {
+                        healingLoading.value = false;
+                    }
+                };
+
                 // 选择一条 Trace
                 const selectTrace = (traceId) => {
                     selectedTraceId.value = traceId;
                     fetchTraceDetail(traceId);
+                    fetchTraceScores(traceId);
+                    fetchHealingReport(traceId);
                 };
 
                 // 选择一个 Span
@@ -577,10 +840,74 @@
                     selectedSpan.value = span;
                 };
 
+                // 拉取评分汇总
+                const fetchEvalScores = async () => {
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/eval/scores`);
+                        if (res.ok) allEvalScores.value = await res.json();
+                    } catch(e) { console.error(e); }
+                };
+
+                // 拉取人工评审
+                const fetchHumanReviews = async () => {
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/eval/human`);
+                        if (res.ok) humanReviews.value = await res.json();
+                    } catch(e) { console.error(e); }
+                };
+
+                // 拉取当前 Trace 的评分明细
+                const fetchTraceScores = async (traceId) => {
+                    try {
+                        const res = await fetch(`${BASE_URL}/api/eval/scores/${traceId}`);
+                        if (res.ok) traceScores.value = await res.json();
+                        else traceScores.value = [];
+                    } catch(e) { traceScores.value = []; }
+                };
+
+                // 触发评估
+                const triggerEval = async (type) => {
+                    evalRunning.value = true;
+                    const labels = { rule: '规则打分', llm: 'LLM 多维打分', ragas: 'RAGAS 打分', all: '全量评估' };
+                    evalMsg.value = `${labels[type] || type} 已在后台启动，稍后刷新大盘查看结果...`;
+                    try {
+                        await fetch(`${BASE_URL}/api/evaluate/${type}`, { method: 'POST' });
+                    } catch(e) { console.error(e); }
+                    setTimeout(() => {
+                        evalRunning.value = false;
+                        fetchEvalScores();
+                        fetchHumanReviews();
+                    }, 3000);
+                };
+
+                // 辅助：LLM 指标中文名
+                const llmLabel = (name) => ({
+                    llm_intent: '意图理解', llm_tool_call: '工具调用',
+                    llm_solution: '解决方案', llm_safety: '专业安全', llm_composite: '综合得分'
+                }[name] || name);
+
+                // 辅助：规则指标中文名
+                const ruleLabel = (name) => ({
+                    rule_success: '任务成功率', rule_latency: '响应延迟',
+                    rule_tool_count: '工具合理性', rule_rag_hit_rate: 'RAG召回率', rule_error_free: '无错误率'
+                }[name] || name);
+
+                // 辅助：根据分数返回颜色 class
+                const scoreColor = (score) => {
+                    if (score === null || score === undefined) return 'text-slate-500';
+                    if (score >= 8) return 'text-emerald-400';
+                    if (score >= 6) return 'text-amber-400';
+                    return 'text-red-400';
+                };
+
+                // 计算属性：各分组
+                const llmAvgScores = computed(() => allEvalScores.value.filter(s => s.metric_name.startsWith('llm_')));
+                const ruleAvgScores = computed(() => allEvalScores.value.filter(s => s.metric_name.startsWith('rule_')));
+
                 // 全面拉取数据
                 const fetchData = async () => {
                     loading.value = true;
-                    await Promise.all([fetchStats(), fetchTraces()]);
+                    await Promise.all([fetchStats(), fetchTraces(), fetchEvalScores(), fetchHumanReviews()]);
                     updateChart();
                     loading.value = false;
                 };
@@ -745,23 +1072,14 @@
                 });
 
                 return {
-                    stats,
-                    traces,
-                    selectedTraceId,
-                    currentTraceDetail,
-                    selectedSpan,
-                    searchQuery,
-                    loading,
-                    statsLoading,
-                    isAutoRefresh,
-                    filteredTraces,
-                    fetchData,
-                    selectTrace,
-                    selectSpan,
-                    getSpanGanttStyle,
-                    formatTime,
-                    formatNumber,
-                    formatJSON
+                    stats, traces, selectedTraceId, currentTraceDetail, selectedSpan,
+                    searchQuery, loading, statsLoading, isAutoRefresh, filteredTraces,
+                    evalRunning, evalMsg, allEvalScores, humanReviews, traceScores,
+                    llmAvgScores, ruleAvgScores,
+                    healingReport, healingLoading, healingMsg,
+                    fetchData, selectTrace, selectSpan, triggerEval, diagnoseTrace, healTrace,
+                    llmLabel, ruleLabel, scoreColor,
+                    getSpanGanttStyle, formatTime, formatNumber, formatJSON
                 };
             }
         }).mount('#app');

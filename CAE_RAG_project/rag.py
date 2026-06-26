@@ -26,12 +26,23 @@ class RagService:
         self.chain = self.__get_chain()
 
     def __format_docs(self, docs):
-        """格式化检索到的文档用于 Prompt 填充"""
+        """格式化检索到的文档用于 Prompt 填充，附带完整章节溯源链"""
         formatted = []
         for i, doc in enumerate(docs):
             source = doc.metadata.get("source", "未知来源")
+            header_path = doc.metadata.get("header_path", "")
+            chunk_index = doc.metadata.get("chunk_index", "")
             content = doc.page_content.replace("\n", " ")
-            formatted.append(f"【资料 {i+1}】(来源: {source}): {content}")
+
+            # 构建精确到章节的溯源标识
+            if header_path:
+                location = f"{source} ▶ {header_path}"
+            else:
+                location = source
+            if chunk_index != "":
+                location += f" [切片#{chunk_index}]"
+
+            formatted.append(f"【资料 {i+1}】(来源: {location}):\n{content}")
         return "\n\n".join(formatted)
 
     def print_prompt(self, x):

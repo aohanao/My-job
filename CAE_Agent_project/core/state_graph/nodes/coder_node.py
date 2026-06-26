@@ -6,20 +6,6 @@ from core.state_graph.state import SimPipelineState
 from core import config
 
 
-def _validate_script(script_path):
-    """内联的代码校验逻辑（原 code_validator_node，逻辑不变）"""
-    print("\n[Coder] 正在校验生成的脚本文件...")
-
-    if not script_path or not os.path.exists(script_path):
-        return "未检测到生成的脚本文件或文件不存在"
-
-    if os.path.getsize(script_path) < 50:
-        return "生成的脚本文件内容异常（体积过小）"
-
-    print(f"[Coder] ✅ 脚本校验通过：{os.path.basename(script_path)}")
-    return None
-
-
 def coder_node(state: SimPipelineState):
     """代码生成 + 校验一体化节点（合并了原 CodeValidator）"""
     try:
@@ -55,13 +41,10 @@ def coder_node(state: SimPipelineState):
 
         print(f"[Coder] 脚本生成成功！已保存至: {output_path}")
 
-        # 内联代码校验
-        code_error = _validate_script(output_path)
-
         return {
             "generated_code": final_script,
             "script_path": output_path,
-            "code_errors": code_error
+            "code_errors": None
         }
     except Exception as e:
         print(f"\n[Coder] 💥 发生致命错误: {e}")

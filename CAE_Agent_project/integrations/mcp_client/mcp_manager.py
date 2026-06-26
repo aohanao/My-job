@@ -1,10 +1,12 @@
 import asyncio
 import os
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 from contextlib import AsyncExitStack
 import mcp
 from mcp import ClientSession
-from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.stdio import stdio_client, get_default_environment, StdioServerParameters as ServerParameters
 from pydantic import create_model, Field, BaseModel
 from langchain_core.tools import StructuredTool
@@ -52,21 +54,28 @@ class MCPConnectionManager:
         self._session = None
         self._exit_stack = None
 
-    async def connect(self, sse_url: str = "http://127.0.0.1:8000/sse"):
+    async def connect(self, mcp_url: str = "http://127.0.0.1:8000/mcp"):
+        """使用 Streamable HTTP 协议连接 MCP Server（官方推荐，替代 SSE）。"""
         if self._session is not None:
             return
 
         self._exit_stack = AsyncExitStack()
         try:
-            streams = await self._exit_stack.enter_async_context(sse_client(sse_url))
-            read_stream, write_stream = streams
+            # streamablehttp_client 返回三元组: (read_stream, write_stream, get_session_id)
+            read_stream, write_stream, _ = await self._exit_stack.enter_async_context(
+                streamablehttp_client(mcp_url)
+            )
             self._session = await self._exit_stack.enter_async_context(
                 ClientSession(read_stream, write_stream)
             )
             await self._session.initialize()
-        except Exception as e:
-            await self._exit_stack.aclose()
+        except (Exception, asyncio.CancelledError) as e:
+            if self._exit_stack:
+                await self._exit_stack.aclose()
             self._session = None
+            self._exit_stack = None
+            if isinstance(e, asyncio.CancelledError):
+                raise RuntimeError("MCP 服务连接被取消，通常是因连接失败或服务器未启动")
             raise e
 
     async def get_tools(self) -> list[StructuredTool]:
@@ -181,7 +190,7 @@ class UnifiedMCPManager:
         self.managers = {}
 
     async def connect_all(self):
-        # 1. 连接 RAG MCP (SSE)
+        # 1. 连接 RAG MCP (Streamable HTTP — 官方协议，替代旧版 SSE)
         rag_alive = False
         if "rag_mcp" in self.managers:
             try:
@@ -190,14 +199,17 @@ class UnifiedMCPManager:
                 pass
                 
         if not rag_alive:
-            sse_manager = MCPConnectionManager()
+            http_manager = MCPConnectionManager()
             try:
-                sse_url = os.environ.get("RAG_MCP_URL", "http://127.0.0.1:8000/sse")
-                await sse_manager.connect(sse_url)
-                self.managers["rag_mcp"] = sse_manager
-                print(f"[UnifiedMCP] 成功连接 RAG MCP: {sse_url}")
-            except Exception as e:
-                print(f"[UnifiedMCP] 连接 RAG MCP 失败 (RAG 模块可能未启动): {e}")
+                # 官方 Streamable HTTP endpoint 使用 /mcp 路径
+                mcp_url = os.environ.get("RAG_MCP_URL", "http://127.0.0.1:8000/mcp")
+                await http_manager.connect(mcp_url)
+                self.managers["rag_mcp"] = http_manager
+                print(f"[UnifiedMCP] [OK] 成功连接 RAG MCP (Streamable HTTP): {mcp_url}")
+            except BaseException as e:
+                if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                    raise e
+                print(f"[UnifiedMCP] [WARN] 连接 RAG MCP 失败 (RAG Server 可能未启动): {e}")
 
         # 2. 连接本地 SimpleTools (Stdio)
         local_alive = False

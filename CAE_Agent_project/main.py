@@ -16,7 +16,7 @@ if _ROOT_DIR not in sys.path:
 from core.eval_sdk import EvalPlatformCallback
 
 # 🌟 重构后的导入路径
-from core.state_graph.builder import build_cae_graph
+from core.state_graph.cae_agent import build_cae_agent
 from integrations.mcp_client.mcp_manager import UnifiedMCPManager
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
@@ -78,7 +78,7 @@ async def main():
         await run_agent_loop(memory, rag_tools, thread_config, session_name, mcp_manager)
 
 async def run_agent_loop(memory, rag_tools, thread_config, session_name, mcp_manager):
-    app = build_cae_graph(checkpointer=memory, tools=rag_tools)
+    app = build_cae_agent(checkpointer=memory, tools=rag_tools)
     
     if not HAS_SQLITE:
         history = load_history_json(session_name)

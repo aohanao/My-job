@@ -24,5 +24,5 @@ EXPOSE 8501
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-# 配置执行入口：启动 Streamlit
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+# 配置执行入口：启动 Web 智能体座舱
+CMD ["python", "web/app_server.py"]

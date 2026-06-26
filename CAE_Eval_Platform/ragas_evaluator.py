@@ -109,12 +109,6 @@ def execute_ragas():
         "answer": [s["answer"] for s in samples],
         "contexts": [s["contexts"] for s in samples]
     }
-    
-    dataset_dict = {
-        "question": [s["question"] for s in samples],
-        "answer": [s["answer"] for s in samples],
-        "contexts": [s["contexts"] for s in samples]
-    }
     eval_dataset = Dataset.from_dict(dataset_dict)
     
     # 为各指标显式挂载模型实例以兼容新版 Ragas

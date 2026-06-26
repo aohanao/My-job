@@ -11,7 +11,7 @@ class TestChatWorkflow:
     @pytest.mark.asyncio
     async def test_simple_chat_query(self, mock_env_vars, suppress_print):
         """测试简单的聊天查询流程"""
-        from core.state_graph.builder import build_cae_graph
+        from core.state_graph.cae_agent import build_cae_agent
         from langgraph.checkpoint.memory import MemorySaver
 
         # Mock所有LLM调用（包括 compressor 和 planner/chat）
@@ -43,7 +43,7 @@ class TestChatWorkflow:
 
             # 构建图
             memory = MemorySaver()
-            app = build_cae_graph(checkpointer=memory, tools=[])
+            app = build_cae_agent(checkpointer=memory, tools=[])
 
             # 执行查询
             config = {"configurable": {"thread_id": "test-chat-001"}}
@@ -68,7 +68,7 @@ class TestChatWorkflow:
     @pytest.mark.asyncio
     async def test_chat_with_tool_call(self, mock_env_vars, suppress_print):
         """测试带工具调用的聊天流程"""
-        from core.state_graph.builder import build_cae_graph
+        from core.state_graph.cae_agent import build_cae_agent
         from langgraph.checkpoint.memory import MemorySaver
         from langchain_core.messages import ToolMessage
 
@@ -122,7 +122,7 @@ class TestChatWorkflow:
             mock_tool.invoke.return_value = "弹性模量: 210000 MPa"
 
             memory = MemorySaver()
-            app = build_cae_graph(checkpointer=memory, tools=[mock_tool])
+            app = build_cae_agent(checkpointer=memory, tools=[mock_tool])
 
             config = {"configurable": {"thread_id": "test-chat-002"}}
             input_state = {
@@ -141,7 +141,7 @@ class TestChatWorkflow:
     @pytest.mark.asyncio
     async def test_chat_with_historical_experience(self, mock_env_vars, suppress_print):
         """测试带历史经验唤醒的聊天"""
-        from core.state_graph.builder import build_cae_graph
+        from core.state_graph.cae_agent import build_cae_agent
         from langgraph.checkpoint.memory import MemorySaver
 
         with patch('core.state_graph.nodes.planner_node.llm') as mock_planner_llm, \
@@ -173,7 +173,7 @@ class TestChatWorkflow:
             ))
 
             memory = MemorySaver()
-            app = build_cae_graph(checkpointer=memory, tools=[])
+            app = build_cae_agent(checkpointer=memory, tools=[])
 
             config = {"configurable": {"thread_id": "test-chat-003"}}
             input_state = {
@@ -192,7 +192,7 @@ class TestChatWorkflow:
     @pytest.mark.asyncio
     async def test_unsupported_intent(self, mock_env_vars, suppress_print):
         """测试不支持的意图 — planner 识别为 unsupported + simulate，触发 error 路由到 END"""
-        from core.state_graph.builder import build_cae_graph
+        from core.state_graph.cae_agent import build_cae_agent
         from langgraph.checkpoint.memory import MemorySaver
 
         with patch('core.state_graph.nodes.planner_node.llm') as mock_planner_llm, \
@@ -214,7 +214,7 @@ class TestChatWorkflow:
             mock_exp.return_value = mock_exp_manager
 
             memory = MemorySaver()
-            app = build_cae_graph(checkpointer=memory, tools=[])
+            app = build_cae_agent(checkpointer=memory, tools=[])
 
             config = {"configurable": {"thread_id": "test-chat-004"}}
             input_state = {
@@ -237,7 +237,7 @@ class TestMultiTurnChat:
     @pytest.mark.asyncio
     async def test_multi_turn_conversation(self, mock_env_vars, suppress_print):
         """测试多轮对话的状态保持"""
-        from core.state_graph.builder import build_cae_graph
+        from core.state_graph.cae_agent import build_cae_agent
         from langgraph.checkpoint.memory import MemorySaver
 
         with patch('core.state_graph.nodes.planner_node.llm') as mock_planner_llm, \
@@ -261,7 +261,7 @@ class TestMultiTurnChat:
             mock_chat_llm.ainvoke = AsyncMock(return_value=AIMessage(content="回复", tool_calls=[]))
 
             memory = MemorySaver()
-            app = build_cae_graph(checkpointer=memory, tools=[])
+            app = build_cae_agent(checkpointer=memory, tools=[])
 
             config = {"configurable": {"thread_id": "test-multi-turn"}}
 

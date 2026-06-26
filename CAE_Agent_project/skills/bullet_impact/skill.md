@@ -4,6 +4,34 @@ name: 子弹高速冲击钢板仿真
 description: 高速动力学子弹打击钢板仿真专家
 skill_type: dynamic_cae_expert
 trigger_conditions: ["子弹", "冲击", "打击", "钢板", "侵彻", "厚度", "半径"]
+few_shot_examples:
+  - user: "帮我模拟一个20mm厚的Q345钢板被半径15mm的钢芯弹击中的情况"
+    assistant: |
+      {
+        "status": "success",
+        "message": "",
+        "geometry": {"plate_length": 200.0, "plate_thickness": 20.0, "bullet_radius": 15.0},
+        "material": {"density": 7.85e-9, "elastic_modulus": 210000.0},
+        "physics": {"step_time": 0.01}
+      }
+  - user: "板厚30毫米，用高强钢，子弹半径20mm"
+    assistant: |
+      {
+        "status": "success",
+        "message": "",
+        "geometry": {"plate_length": 200.0, "plate_thickness": 30.0, "bullet_radius": 20.0},
+        "material": {"density": 7.85e-9, "elastic_modulus": 250000.0},
+        "physics": {"step_time": 0.01}
+      }
+  - user: "一块薄板被小子弹打，厚度大概5毫米"
+    assistant: |
+      {
+        "status": "need_clarification",
+        "message": "检测到钢板厚度为5mm，已接近工程极限（推荐≥10mm以保证有效侵彻效果），请确认是否继续，或提供更多钢板材质信息。",
+        "geometry": {"plate_length": 200.0, "plate_thickness": 5.0, "bullet_radius": 20.0},
+        "material": {"density": 7.85e-9, "elastic_modulus": 210000.0},
+        "physics": {"step_time": 0.01}
+      }
 ---
 
 # 显式动力学专家指令

@@ -168,14 +168,29 @@ class KnowledgeBaseService:
             knowledge_chunks.append(content)
             
             # 继承 Markdown 切分器提取到的标题层级（如果有的话）
-            meta = doc.metadata.copy() 
+            meta = doc.metadata.copy()
+
+            # === 🌟 全链路溯源：构建章节路径 ===
+            # MarkdownHeaderTextSplitter 在 metadata 中存放 Header_H1/H2/H3 字段
+            header_parts = []
+            for h_key in ("Header_H1", "Header_H2", "Header_H3"):
+                h_val = meta.get(h_key)
+                if h_val:
+                    header_parts.append(str(h_val).strip())
+            # header_path: 形如 "第三章 有限元基础 > 3.2 单元类型 > 3.2.1 四面体单元"
+            header_path = " > ".join(header_parts) if header_parts else ""
+            # chapter: 顶层章节名称
+            chapter = header_parts[0] if header_parts else ""
+
             # 补充我们系统的通用元数据
             meta.update({
                 "source": filename,
                 "file_md5": file_md5,
                 "create_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "operator": "user",
-                "chunk_index": i
+                "chunk_index": i,
+                "header_path": header_path,   # 完整章节路径（用于溯源展示）
+                "chapter": chapter,            # 顶层章节（用于摘要引用）
             })
             if image_paths_for_meta:
                 meta["image_paths"] = ";".join(image_paths_for_meta)
@@ -188,6 +203,15 @@ class KnowledgeBaseService:
             texts=knowledge_chunks,
             metadatas=metadatas
         )
+        
+        # 🚀 5. 实时增量追加本地 BM25 序列化缓存，触发热更新
+        try:
+            from retriever_service import append_to_bm25_pickle
+            append_to_bm25_pickle(knowledge_chunks, metadatas)
+            report("✅ BM25 本地缓存已自动完成增量热同步！")
+        except Exception as e:
+            print(f"[ERROR] 增量写入 BM25 本地缓存失败: {e}")
+            
         report(f"✅ RAG 多模态入库完美封炉！")
         return f"[成功] '{filename}' 已深度融合为 {len(knowledge_chunks)} 个切片并入库"
 

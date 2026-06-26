@@ -2,6 +2,7 @@
 import pytest
 from core.state_graph.routing import (
     route_after_planner,
+    route_after_planner_agent,
     route_after_extractor,
     route_after_coder,
     route_after_executor
@@ -25,6 +26,25 @@ class TestRouteAfterPlanner:
         """测试错误时路由到End"""
         state = {"action_type": "error"}
         assert route_after_planner(state) == "End"
+
+
+class TestRouteAfterPlannerAgent:
+    """测试 PlannerAgent 之后的路由决策"""
+
+    def test_route_to_end_on_chat(self):
+        """测试咨询对话路由到End"""
+        state = {"action_type": "chat"}
+        assert route_after_planner_agent(state) == "End"
+
+    def test_route_to_simulate(self):
+        """测试仿真执行路由到SimPipeline"""
+        state = {"action_type": "simulate"}
+        assert route_after_planner_agent(state) == "SimPipeline"
+
+    def test_route_to_end_on_error(self):
+        """测试错误路由到End"""
+        state = {"action_type": "error"}
+        assert route_after_planner_agent(state) == "End"
 
 
 class TestRouteAfterExtractor:

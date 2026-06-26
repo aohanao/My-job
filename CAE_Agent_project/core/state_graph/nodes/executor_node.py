@@ -25,7 +25,7 @@ def executor_node(state: SimPipelineState):
                 
             msg = f"Executor 找不到脚本文件！路径='{script_path}'，CWD='{cwd}'，目录内容='{dir_files}'"
             print(f"[Executor] ⚠️ 错误: {msg}")
-            return {"error_log": msg, "messages": [AIMessage(content=f"❌ 运行失败：{msg}")]}
+            return {"error_log": msg}
 
         print(f"\n[Executor] 🚀 准备点火！正在通过 HTTP 调用呼叫宿主机 Abaqus...")
         script_name = os.path.basename(script_path)
@@ -54,45 +54,20 @@ def executor_node(state: SimPipelineState):
                 continue
         
         if result_data is None:
-            error_msg = f"连接 Bridge 失败。最后尝试的报错为: {last_error}"
-            help_tip = "\n\n💡 **解决方法**：\n1. 请确保宿主机已启动 `integrations/cae_host_bridge/host_cae_bridge.py`。\n2. 启动指令示例: `python integrations/cae_host_bridge/host_cae_bridge.py`"
-            return {"error_log": error_msg, "messages": [AIMessage(content=f"⚠️ 网络错误：{error_msg}{help_tip}")]}
+            error_msg = f"Connection Error: {last_error}"
+            print(f"[Executor] ❌ 仿真执行失败: {error_msg}")
+            return {"error_log": error_msg}
 
         if result_data.get("status") == "error":
             error_msg = result_data.get("message", "未知错误")
             detail = result_data.get("detail", "无详细日志")
             print(f"[Executor] ❌ 仿真执行失败: {error_msg}")
-            
-            # 🌟 组合精美 markdown 报错
-            full_error_md = (
-                f"❌ **宿主机 CAE 软件执行中途报错**\n\n"
-                f"**错误简述**: `{error_msg}`\n"
-                f"**Abaqus 日志摘要 (最后15行)**:\n"
-                f"```text\n{detail}\n```\n"
-                f"💡 **排查建议**: 请检查 G:\\...\\sandbox\\generated_scripts\\{script_name} 的逻辑是否正确。"
-            )
-            return {"error_log": f"{error_msg}: {detail}", "messages": [AIMessage(content=full_error_md)]}
+            return {"error_log": f"{error_msg}: {detail}"}
                 
-        success_msg = f"✅ 物理机 CAE 计算已完美收官！\n- 脚本名称: `{script_name}`\n- 宿主机回传状态: {result_data.get('message')}"
-        print(f"[Executor] {success_msg}")
-        
-        from langchain_core.messages import HumanMessage
-        messages = state.get("messages", [])
-        human_msgs = [m.content for m in messages if isinstance(m, HumanMessage)]
-        user_query = human_msgs[0] if human_msgs else ""
-        
-        exp_manager = get_experience_manager()
-        exp_manager.engrave_success(
-            user_query=user_query, 
-            skill=state.get("selected_skill", ""),
-            consensus_params=state.get("consensus_params", {}),
-            script_name=script_name
-        )
-        
+        print(f"[Executor] ✅ 仿真执行接口返回成功，流转至 Critic 智能体评估结果...")
         return {
             "error_log": None,
-            "result_dir": os.path.dirname(script_path),
-            "messages": [AIMessage(content=success_msg)]
+            "result_dir": os.path.dirname(script_path)
         }
     except Exception as e:
         print(f"\n[Executor] 💥 发生致命错误: {e}")

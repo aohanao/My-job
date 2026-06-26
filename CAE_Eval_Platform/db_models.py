@@ -56,6 +56,38 @@ def init_db(db_path: str = DB_PATH):
     )
     ''')
     
+    # 人工评审表：存放人工标注的评分结果
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS human_review (
+        review_id TEXT PRIMARY KEY,
+        trace_id TEXT,
+        reviewer TEXT DEFAULT 'human',
+        intent_score REAL,         -- 意图理解 (0-10)
+        solution_score REAL,       -- 解决方案质量 (0-10)
+        safety_score REAL,         -- 专业安全性 (0-10)
+        overall_score REAL,        -- 综合印象分 (0-10)
+        comment TEXT,              -- 人工评语
+        timestamp REAL,
+        FOREIGN KEY (trace_id) REFERENCES run_trace(trace_id)
+    )
+    ''')
+
+    # 自愈诊断报告表：存放智能体报错诊断与自愈修复报告
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS healing_report (
+        healing_id TEXT PRIMARY KEY,
+        trace_id TEXT,
+        diagnostic_summary TEXT,  -- RCA 诊断分析
+        suggested_fix TEXT,        -- 修复建议
+        fixed_code TEXT,           -- 修复后的代码或参数
+        execution_status TEXT,     -- 自愈状态: 'PENDING', 'RUNNING', 'SUCCESS', 'FAILED'
+        fixed_output TEXT,         -- 自愈重新运行的输出
+        error_msg TEXT,            -- 自愈失败日志 (可选)
+        timestamp REAL,
+        FOREIGN KEY (trace_id) REFERENCES run_trace(trace_id)
+    )
+    ''')
+
     conn.commit()
     conn.close()
 
